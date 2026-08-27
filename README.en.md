@@ -1,8 +1,10 @@
 <div align="center">
 
-# DSH Node Flow
-
 [English](./README.en.md) · [简体中文](./README.md)
+
+<br><br>
+
+<img src="./docs/images/banner.png" alt="DSH Node Flow — Visual workflows for DeepSeek Harness" width="100%">
 
 ### A visual, executable node-based workflow canvas for DeepSeek Harness
 

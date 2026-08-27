@@ -1,8 +1,10 @@
 <div align="center">
 
-# DSH Node Flow
-
 [English](./README.en.md) · [简体中文](./README.md)
+
+<br><br>
+
+<img src="./docs/images/banner.png" alt="DSH Node Flow — DeepSeek Harness 可视化节点工作流" width="100%">
 
 ### 为 DeepSeek Harness 提供可视化、可执行的节点工作流画布
 
