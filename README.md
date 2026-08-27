@@ -2,6 +2,9 @@
 
 # DSH Node Flow
 
+[![简体中文](https://img.shields.io/badge/语言-简体中文-16a34a?style=flat-square)](./README.md)
+[![English](https://img.shields.io/badge/Language-English-2563eb?style=flat-square)](./README.en.md)
+
 ### 为 DeepSeek Harness 提供可视化、可执行的节点工作流画布
 
 用拖拽和连线组织触发器、子 Agent、代码、条件分支、循环与定时任务，直接在 DSH 中运行完整工作流。
@@ -50,10 +53,16 @@ DSH Node Flow 是一个面向 [DeepSeek Harness（DSH）](https://github.com/dee
 
 ### 安装
 
-在已经安装并配置好的 DSH 环境中运行：
+项目尚未发布到 npm，请直接从公开 GitHub 仓库安装：
 
 ```sh
-dsh plugin add dsh-node-flow
+dsh plugin --profile web add git+https://github.com/CodermanYHZ/dsh-node-flow.git
+```
+
+如果你是在 DeepSeek Harness 源码目录中运行 DSH，请使用：
+
+```sh
+pnpm dsh plugin --profile web add git+https://github.com/CodermanYHZ/dsh-node-flow.git
 ```
 
 安装完成后重启 Web UI：
@@ -61,6 +70,8 @@ dsh plugin add dsh-node-flow
 ```sh
 dsh web
 ```
+
+源码运行方式对应为 `pnpm dsh web`。
 
 进入 DSH 后，从侧边栏打开 **节点模式** 即可使用。
 
