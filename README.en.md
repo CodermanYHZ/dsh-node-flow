@@ -2,8 +2,7 @@
 
 # DSH Node Flow
 
-[![简体中文](https://img.shields.io/badge/语言-简体中文-2563eb?style=flat-square)](./README.md)
-[![English](https://img.shields.io/badge/Language-English-16a34a?style=flat-square)](./README.en.md)
+[English](./README.en.md) · [简体中文](./README.md)
 
 ### A visual, executable node-based workflow canvas for DeepSeek Harness
 

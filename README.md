@@ -2,8 +2,7 @@
 
 # DSH Node Flow
 
-[![简体中文](https://img.shields.io/badge/语言-简体中文-16a34a?style=flat-square)](./README.md)
-[![English](https://img.shields.io/badge/Language-English-2563eb?style=flat-square)](./README.en.md)
+[English](./README.en.md) · [简体中文](./README.md)
 
 ### 为 DeepSeek Harness 提供可视化、可执行的节点工作流画布
 
