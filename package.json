@@ -31,7 +31,6 @@
     "build:client": "node scripts/build-client.mjs",
     "dev": "vite",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
