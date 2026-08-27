@@ -1,0 +1,7 @@
+# Bundle patch applied over the selected DSH profile when this package is listed
+# in `dsh.profile.bundles`. The row id is deployment-local; the package name
+# must match package.json.
+
+- insert:
+    - id: dsh-node-flow
+      name: 'dsh-node-flow'

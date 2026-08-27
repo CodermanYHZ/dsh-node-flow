@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+.env
+coverage/
+
+# npm 误生成（本项目用 pnpm）
+package-lock.json
+vite.config.ts.timestamp-*.mjs
