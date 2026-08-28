@@ -81,6 +81,18 @@ Open **Node Mode** from the DSH sidebar to start building workflows.
 3. Click **▶ Run** and watch the node states and highlighted execution path.
 4. Use **Export** to save the workflow as a file, or create a cron schedule from **Scheduled Tasks**.
 
+## Companion AI Skill
+
+Install the companion [`dsh-node-flow-skill`](https://github.com/CodermanYHZ/dsh-node-flow-skill) to help AI agents in DSH generate JSON workflows that can be imported directly into this plugin.
+
+The Skill documents the current workflow schema, node fields, connection handles, loop rules, and complete examples, reducing missing fields and invalid handle names. After installation, prompt the AI with:
+
+```text
+Use dsh-node-flow-skill to generate an importable dsh-node-flow JSON workflow that …
+```
+
+Skill repository: <https://github.com/CodermanYHZ/dsh-node-flow-skill>
+
 ## Node types
 
 | Node | Purpose |

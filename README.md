@@ -81,6 +81,18 @@ dsh web
 3. 点击顶部 **▶ 运行**，观察节点状态与实际执行路径。
 4. 使用 **导出** 将工作流保存为文件，或通过 **定时任务** 创建 Cron 调度。
 
+## 配套 AI Skill
+
+如果希望让 DSH 中的 AI 更准确地生成可直接导入本插件的 JSON 工作流，可以安装配套的 [`dsh-node-flow-skill`](https://github.com/CodermanYHZ/dsh-node-flow-skill)。
+
+该 Skill 包含当前工作流文档结构、节点字段、连线端口、循环规则与完整示例，能够减少字段遗漏或端口名称错误。安装后，可以直接告诉 AI：
+
+```text
+使用 dsh-node-flow-skill，为我生成一个可导入 dsh-node-flow 的 JSON 工作流：……
+```
+
+Skill 地址：<https://github.com/CodermanYHZ/dsh-node-flow-skill>
+
 ## 节点类型
 
 | 节点 | 用途 |
