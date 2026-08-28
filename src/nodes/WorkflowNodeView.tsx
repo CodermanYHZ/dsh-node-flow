@@ -63,7 +63,7 @@ export function WorkflowNodeView({ data, selected }: NodeProps<WorkflowNode>) {
     )
     targets.push(
       { id: 'in', label: 'in', top: '32%' },
-      { id: 'again', label: 'back', top: '68%' },
+      { id: 'back', label: 'back', top: '68%' },
     )
   }
   const isBranch = data.kind === 'if' || data.kind === 'switch' || data.kind === 'loop' || data.kind === 'while'

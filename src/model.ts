@@ -17,8 +17,8 @@ export type WorkflowNodeType =
   | 'agent' // delegate to a sub-agent
   | 'if' // boolean branch: routes to "true" or "false" source handle
   | 'switch' // value branch: routes to a matching case source handle (or "default")
-  | 'loop' // repeat a body over an array or N times (iterate / done / again)
-  | 'while' // repeat a body while a condition holds (iterate / done / again)
+  | 'loop' // repeat a body over an array or N times (iterate / done / back)
+  | 'while' // repeat a body while a condition holds (iterate / done / back)
   | 'code' // execute code on the DSH host (ctx.codeRuntime)
   | 'output' // terminal result
   | 'note' // a free annotation (no connection handles)
@@ -371,8 +371,8 @@ export function buildLoopExample(): WorkflowDocument {
     { id: 'lpe4', source: 'lp-if', target: 'lp-agent', sourceHandle: 'true' },
     { id: 'lpe5', source: 'lp-if', target: 'lp-out-skip', sourceHandle: 'false' },
     { id: 'lpe6', source: 'lp-agent', target: 'lp-out-agent' },
-    { id: 'lpe7', source: 'lp-out-agent', target: 'lp-loop', targetHandle: 'again' },
-    { id: 'lpe8', source: 'lp-out-skip', target: 'lp-loop', targetHandle: 'again' },
+    { id: 'lpe7', source: 'lp-out-agent', target: 'lp-loop', targetHandle: 'back' },
+    { id: 'lpe8', source: 'lp-out-skip', target: 'lp-loop', targetHandle: 'back' },
     { id: 'lpe9', source: 'lp-loop', target: 'lp-out-done', sourceHandle: 'done' },
   ]
   return { version: 1, name: 'Loop · 批量处理热点', description: '遍历热点列表 → 含 AI 的交 agent 深入、否则跳过 → 收集每轮结果', nodes, edges }
@@ -394,8 +394,8 @@ export function buildWhileExample(): WorkflowDocument {
     { id: 'whe1', source: 'wh-trig', target: 'wh-while', targetHandle: 'in' },
     { id: 'whe2', source: 'wh-while', target: 'wh-code', sourceHandle: 'iterate' },
     { id: 'whe3', source: 'wh-code', target: 'wh-if' },
-    { id: 'whe4', source: 'wh-if', target: 'wh-while', sourceHandle: 'true', targetHandle: 'again' },
-    { id: 'whe5', source: 'wh-if', target: 'wh-while', sourceHandle: 'false', targetHandle: 'again' },
+    { id: 'whe4', source: 'wh-if', target: 'wh-while', sourceHandle: 'true', targetHandle: 'back' },
+    { id: 'whe5', source: 'wh-if', target: 'wh-while', sourceHandle: 'false', targetHandle: 'back' },
     { id: 'whe6', source: 'wh-while', target: 'wh-out', sourceHandle: 'done' },
   ]
   return { version: 1, name: 'While · 状态轮询', description: '用字符串状态(待处理→处理中→完成)判断，直到状态变为"完成"才停，收集每次推进', nodes, edges }

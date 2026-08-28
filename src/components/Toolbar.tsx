@@ -98,14 +98,14 @@ export function Toolbar({ onExitNodeMode }: { onExitNodeMode?: () => void }) {
 
     // Run a single loop/while body iteration by walking from `iterateId`. The
     // body walk terminates (returns) the moment control flows back to `loopId`
-    // via the `again` edge, so each iteration is a self-contained sub-walk.
+    // via the `back` edge, so each iteration is a self-contained sub-walk.
     const runLoopBody = async (iterateId: string, loopId: string, input: string): Promise<string> => {
       if (!iterateId) return input
       // Each iteration gets a FRESH clone of the outer visited (which does not
       // include body nodes), so body nodes re-run every time. The clone is what
       // executeNode mutates; the outer `visited` stays clean. executeNode's
       // `stopAt=loopId` ends the sub-walk the moment control flows back to the
-      // loop node (the `again` edge), which is the iteration's terminal value.
+      // loop node (the `back` edge), which is the iteration's terminal value.
       const bodyVisited = new Set(visited)
       return await executeNode(iterateId, input, bodyVisited, loopId)
     }
