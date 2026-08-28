@@ -30,6 +30,7 @@ export const inject = [] as const
 /** Idempotency attribute / selector for the injected sidebar entry row. */
 const ENTRY_ATTR = 'data-dsh-node-flow-entry'
 const ENTRY_SELECTOR = `[${ENTRY_ATTR}]`
+const ENTRY_LABEL_ATTR = 'data-dsh-node-flow-entry-label'
 
 let overlayRoot: ReactDOM.Root | null = null
 let overlayEl: HTMLElement | null = null
@@ -81,6 +82,29 @@ function toggleOverlay(): void {
   else openOverlay()
 }
 
+/** Match the current sidebar rail state across legacy and current DSH shells. */
+function sidebarIsCollapsed(root: HTMLElement): boolean {
+  return root.matches('[class*="collapsed"], [data-sidebar-collapsed="true"]')
+    || root.closest('[data-sidebar-collapsed="true"]') !== null
+    || root.getBoundingClientRect().width <= 80
+}
+
+/** Keep the injected row aligned with the wide sidebar or collapsed icon rail. */
+function syncEntryLayout(root: HTMLElement): void {
+  if (!entry) return
+  const collapsed = sidebarIsCollapsed(root)
+  entry.dataset.sidebarCollapsed = collapsed ? 'true' : 'false'
+  entry.style.alignSelf = collapsed ? 'flex-start' : 'stretch'
+  entry.style.justifyContent = collapsed ? 'center' : 'flex-start'
+  entry.style.width = collapsed ? '36px' : '100%'
+  entry.style.height = collapsed ? '36px' : 'auto'
+  entry.style.padding = collapsed ? '0' : '8px 12px'
+  entry.style.margin = collapsed ? '0 0 12px' : '0'
+  entry.style.gap = collapsed ? '0' : '8px'
+  const label = entry.querySelector<HTMLElement>(`[${ENTRY_LABEL_ATTR}]`)
+  if (label) label.hidden = collapsed
+}
+
 /** Build the sidebar entry row (a plain button; no React tree in the shell). */
 function createEntry(): HTMLButtonElement {
   const btn = document.createElement('button')
@@ -97,17 +121,19 @@ function createEntry(): HTMLButtonElement {
     'background:transparent',
     'border:none',
     'border-radius:8px',
-    'color:#e2e8f0',
+    'color:inherit',
     'font-size:13px',
     'cursor:pointer',
     'text-align:left',
     'transition:background 0.15s',
   ].join(';')
   btn.innerHTML =
-    '<span style="display:inline-flex;align-items:center;font-size:14px;line-height:1;">⬡</span>' +
-    '<span>节点模式</span>'
+    '<span aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;font-size:14px;line-height:1;">⬡</span>' +
+    `<span ${ENTRY_LABEL_ATTR}>节点模式</span>`
   btn.addEventListener('mouseenter', () => {
-    if (btn.dataset.active !== 'true') btn.style.background = 'rgba(148,163,184,0.12)'
+    if (btn.dataset.active !== 'true') {
+      btn.style.background = 'var(--dsw-alias-interactive-bg-hover, rgba(148,163,184,0.12))'
+    }
   })
   btn.addEventListener('mouseleave', () => {
     if (btn.dataset.active !== 'true') btn.style.background = 'transparent'
@@ -156,9 +182,32 @@ function mountEntry(): () => void {
   entry = createEntry()
   let root: HTMLElement | undefined
   let placed = false
+  let observedRoot: HTMLElement | undefined
+
+  const resizeObserver = new ResizeObserver(() => {
+    if (root) syncEntryLayout(root)
+  })
+  const stateObserver = new MutationObserver(() => {
+    if (root) syncEntryLayout(root)
+  })
+
+  const observeRoot = (next: HTMLElement): void => {
+    if (observedRoot === next) return
+    resizeObserver.disconnect()
+    stateObserver.disconnect()
+    observedRoot = next
+    resizeObserver.observe(next)
+    stateObserver.observe(next, {
+      attributes: true,
+      attributeFilter: ['class', 'data-sidebar-collapsed'],
+    })
+  }
 
   const tryPlace = (): void => {
     if (root !== undefined && !root.isConnected) {
+      resizeObserver.disconnect()
+      stateObserver.disconnect()
+      observedRoot = undefined
       root = undefined
       placed = false
     }
@@ -169,7 +218,9 @@ function mountEntry(): () => void {
     }
     root ??= sidebarRoot()
     if (root === undefined) return
+    observeRoot(root)
     placed = placeEntry(root)
+    if (placed) syncEntryLayout(root)
   }
 
   const waitObserver = new MutationObserver(() => {
@@ -181,6 +232,8 @@ function mountEntry(): () => void {
 
   return () => {
     waitObserver.disconnect()
+    resizeObserver.disconnect()
+    stateObserver.disconnect()
     entry?.remove()
     entry = null
   }
