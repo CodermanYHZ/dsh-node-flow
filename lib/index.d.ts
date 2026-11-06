@@ -4,11 +4,15 @@
  * Registers same-origin HTTP routes so canvas nodes can really execute on the
  * host, plus a scheduled-task engine (cron → host graph walker).
  *
- * - `/dsh-node-flow/run` — execute a code node via `ctx.codeRuntime`.
+ * - `/dsh-node-flow/run` — execute a code node with the host Python interpreter
+ *   (`python -u -c <code>`); the flow input arrives in `DSH_INPUT`. Python is
+ *   the only code runtime: the former TypeScript/`ctx.ptcRuntime` path is gone.
  * - `/dsh-node-flow/run-agent` — delegate an agent node to a DSH
- *   subagent via `ctx.subagents`, parented on a live root agent.
+ *   subagent via `ctx.subagents.startActivation`, parented on a live root agent.
  * - `/dsh-node-flow/{schedule,schedules,runs,models}` — schedule/list/runs
  *   management and the agent model dropdown.
+ * - `/dsh-node-flow/health` — capability report + a real runtime self-test,
+ *   also written to `$DSH_HOME/workflow-canvas/health.json` on activation.
  *
  * The host half waits for `webServer` (the standard `inject` property) so the
  * routes always mount on the live server. Optional services are re-read at

@@ -1,10 +1,15 @@
 /**
  * Usage / help + AI authoring guide for dsh-node-flow.
  *
+ * Mounted through `overlayHost()` like the other page windows, so it covers the
+ * node-mode page rather than the whole application window.
+ *
  * @module components/HelpDoc
  */
 
 import type { ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { overlayHost } from './overlayHost.js'
 
 function Note({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -36,8 +41,8 @@ function THead({ cols }: { cols: string[] }) {
 }
 
 export function HelpDoc({ onClose }: { onClose: () => void }) {
-  return (
-    <div className="wf-helpdoc" role="dialog" aria-modal="true" aria-label="生成工作流指南">
+  return createPortal(
+    <div className="wf-helpdoc" role="dialog" aria-label="生成工作流指南">
       <div className="wf-helpdoc__head">
         <div className="wf-helpdoc__title">工作流生成指南（给 AI / 使用者）</div>
         <button className="wf-helpdoc__close" onClick={onClose} aria-label="关闭">
@@ -109,7 +114,7 @@ note: 168×120`}</Code>
               <tr><td><code>kind</code></td><td>string</td><td>是</td><td>节点类型，见下。决定这个节点干什么。</td></tr>
               <tr><td><code>label</code></td><td>string</td><td>是</td><td>画布上显示的名字，填一句话。</td></tr>
               <tr><td><code>model</code></td><td>string</td><td>否</td><td>仅 agent：<code>"provider|modelId"</code>，空/缺省 = 沿用当前会话模型。</td></tr>
-              <tr><td><code>timeout</code></td><td>string(秒)</td><td>否</td><td>仅 code/agent：超时秒数，如 <code>"30"</code>；缺省=不限制。</td></tr>
+              <tr><td><code>timeout</code></td><td>string(秒)</td><td>否</td><td>仅 code/agent：超时秒数，如 <code>"30"</code>；缺省=不限制（code 节点另有 10 分钟硬上限）。</td></tr>
               <tr><td><code>onError</code></td><td>string</td><td>否</td><td>仅 code/agent：<code>"stop"</code>(默认, 失败=断开后续) / <code>"continue"</code>(失败=往下传空值)。</td></tr>
               <tr><td><code>notes</code></td><td>string</td><td>否</td><td>备注，不参与执行。</td></tr>
             </tbody>
@@ -157,25 +162,20 @@ note: 168×120`}</Code>
             但注意：<b>子代理不带父代理的对话记忆/上下文</b>——每次只拿到「上游输入 + 你填的 system prompt」。如果需要带上下文/记忆，让 AI 用 <b>code 节点</b> 把关键信息拼进输入传给子代理即可（code 节点什么都能做）。
           </Note>
 
-          <h3>3.4 代码执行 code</h3>
+          <h3>3.4 代码执行 code（Python）</h3>
           <table className="wf-helpdoc__table">
             <THead cols={['字段', '作用', '示例']} />
             <tbody>
-              <tr><td><code>language</code></td><td>类型 <code>"typescript"</code>(默认) 或 <code>"python"</code>。</td><td><code>"python"</code></td></tr>
-              <tr><td><code>code</code></td><td>源码。TypeScript 用 <code>return</code> 返回结果；Python 用 <code>print</code> 输出结果。</td><td>见下</td></tr>
-              <tr><td><code>timeout</code>/<code>onError</code></td><td>同通用字段。</td><td><code>"30"</code> / <code>"continue"</code></td></tr>
+              <tr><td><code>code</code></td><td>Python 源码。程序在宿主上以 <code>python -u -c &lt;code&gt;</code> 执行，<code>print</code> 到 stdout 的内容就是节点输出。</td><td>见下</td></tr>
+              <tr><td><code>timeout</code>/<code>onError</code></td><td><code>timeout</code> 为秒数，留空 = 硬上限 10 分钟；<code>onError</code> 同通用字段。</td><td><code>"30"</code> / <code>"continue"</code></td></tr>
             </tbody>
           </table>
-          <Code>{`// TypeScript：读上游输入
-const it = await dsh.input(null)      // 注意必须传参数，写 null
-return JSON.stringify({ item: it })`}</Code>
-          <Code>{`# Python：读上游输入（环境变量）
+          <Code>{`# 读上游输入（环境变量 DSH_INPUT，UTF-8）
 import os
 s = os.environ.get('DSH_INPUT', '')
 print('got:', s)`}</Code>
           <Warn>
-            <code>dsh.input()</code> 不带参数会报「binding arguments must be lossless JSON」，<b>必须写</b>{' '}
-            <code>await dsh.input(null)</code>。Python 结果通过 stdout 返回；TypeScript 通过 <code>return</code> 返回。
+            TypeScript 运行时已经移除：<code>language</code> 字段即使存在也会按 Python 执行，旧图里的 TS 代码需要改写成 Python。<b>结果只取 stdout</b>——stderr 非空会让节点报错。
           </Warn>
 
           <h3>3.5 输出 output</h3>
@@ -292,7 +292,7 @@ JSON.parse(result).code === 0  // 天气 code 是否为 0（晴）`}</Code>
           <ul>
             <li>if/switch 的条件、loop 的 <code>itemsExpr</code>、while 的条件都读 <code>result</code>。</li>
             <li>上游是 JSON 对象字符串 → 用 <code>JSON.parse(result)</code>；是数字字符串 → <code>Number(result)</code>；是普通文本 → 直接字符串操作。</li>
-            <li>代码节点读输入：TS <code>await dsh.input(null)</code>；Python <code>os.environ.get('DSH_INPUT')</code>。输出（TS return / Python print）会成为下游的 <code>result</code>。</li>
+            <li>代码节点读输入：<code>os.environ.get('DSH_INPUT')</code>（Python 是唯一运行语言）。<code>print</code> 到 stdout 的内容成为下游的 <code>result</code>。</li>
           </ul>
         </section>
 
@@ -301,13 +301,13 @@ JSON.parse(result).code === 0  // 天气 code 是否为 0（晴）`}</Code>
           <h2>6. 坑点清单（务必遵守）</h2>
           <ol>
             <li><b>连线 handle 字符串必须精确</b>：if 用 <code>true/false</code>，switch 用 case 或 <code>default</code>，loop/while 用 <code>iterate/done</code> + <code>in/back</code>。</li>
-            <li><b>代码读输入必须传参</b>：<code>await dsh.input(null)</code>，否则运行时抛错。</li>
+            <li><b>代码节点只能写 Python</b>：输入在 <code>DSH_INPUT</code>，结果看 stdout；stderr 非空会判失败。</li>
             <li><b>switch 是字符串全等</b>，case 必须和上游值完全一致。</li>
             <li><b>loop/while 一定要设 <code>maxIters</code></b>（默认 100），否则可能死循环。</li>
             <li><b>agent/code 默认失败即停</b>。若希望失败也继续，设 <code>onError:"continue"</code>。</li>
             <li><b>model 别乱填</b>：格式 <code>provider|modelId</code>，留空 = 继承；否则用真实存在于 <code>/models</code> 的。</li>
             <li><b>节点 id 唯一</b>，边引用要一致；<code>type:"workflow"</code> 固定。</li>
-            <li><b>定时任务</b>：存的是你保存那一刻的<b>工作流快照</b>（含分支/循环，宿主导入执行）；按<b>宿主本地时区</b>匹配；<b>宿主进程需存活</b>；<b>错过不补跑</b>。</li>
+            <li><b>定时任务</b>：存的是你保存那一刻的<b>工作流快照</b>（含分支/循环，宿主导入执行）；按<b>宿主本地时区</b>匹配；<b>宿主进程需存活</b>；停机/睡眠错过的触发在恢复后<b>补跑一次</b>。</li>
             <li><b>备注 note 无连接口</b>，别给它连线。</li>
             <li><b>Agent 需宿主有活父 agent</b> 才能委派，否则该步骤失败。</li>
           </ol>
@@ -344,6 +344,7 @@ JSON.parse(result).code === 0  // 天气 code 是否为 0（晴）`}</Code>
 }`}</Code>
         </section>
       </div>
-    </div>
+    </div>,
+    overlayHost(),
   )
 }

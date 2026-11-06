@@ -20,6 +20,7 @@ import { NODE_SIZE } from '../model.js'
 const KIND_META: Record<WorkflowNodeType, { color: string; icon: string; tag: string }> = {
   trigger: { color: '#34d399', icon: '▶', tag: 'TRIGGER' },
   schedule: { color: '#fb923c', icon: '⏰', tag: 'SCHEDULE' },
+  listen: { color: '#38bdf8', icon: '📡', tag: 'LISTEN' },
   agent: { color: '#a78bfa', icon: '🤖', tag: 'AGENT' },
   if: { color: '#fbbf24', icon: '◇', tag: 'IF' },
   switch: { color: '#f472b6', icon: '⋔', tag: 'SWITCH' },

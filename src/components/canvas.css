@@ -1,52 +1,11 @@
-/* dsh-node-flow UI styles 鈥?dark (default) / light theme via CSS variables. */
-
-/* ---- theme tokens: dark (default) ---- */
-:root {
-  --wf-bg: #0b1120;
-  --wf-panel: #101a2b;
-  --wf-panel2: #162135;
-  --wf-panel3: #1c2941;
-  --wf-panel3h: #243352;
-  --wf-border: #22304a;
-  --wf-border2: #2a3a56;
-  --wf-border3: #2c3d60;
-  --wf-node-border: #3a4d68;
-  --wf-node-border2: #475569;
-  --wf-text: #e6edf7;
-  --wf-text2: #f1f5fb;
-  --wf-muted: #8b9bb3;
-  --wf-muted2: #6b7a93;
-  --wf-gutter: #0e1626;
-  --wf-accent: #4f8cff;
-  --wf-accent-dark: #3b74e6;
-  --wf-accent-hover: #5f97ff;
-  --wf-on-accent: #0b1120;
-  --wf-shadow: rgba(0, 0, 0, 0.32);
-}
-
-/* ---- theme tokens: light ---- */
-[data-theme="light"] {
-  --wf-bg: #f4f6fa;
-  --wf-panel: #ffffff;
-  --wf-panel2: #eef1f6;
-  --wf-panel3: #e6ecf4;
-  --wf-panel3h: #dce5f1;
-  --wf-border: #dfe5ee;
-  --wf-border2: #c8d2e0;
-  --wf-border3: #b7c4d8;
-  --wf-node-border: #c8d2e0;
-  --wf-node-border2: #b2c0d4;
-  --wf-text: #1a2333;
-  --wf-text2: #24344f;
-  --wf-muted: #6b7a93;
-  --wf-muted2: #8494ad;
-  --wf-gutter: #eef1f6;
-  --wf-accent: #3b74e6;
-  --wf-accent-dark: #2f63cf;
-  --wf-accent-hover: #4f8cff;
-  --wf-on-accent: #0b1120;
-  --wf-shadow: rgba(30, 50, 90, 0.12);
-}
+/*
+ * dsh-node-flow UI styles.
+ *
+ * The canvas carries no palette of its own any more: every colour below is
+ * derived from the shell's theme (see the token block further down), and the
+ * panel mirrors the host's light/dark scheme onto `data-theme` so the few
+ * `[data-theme="light"]` widget tweaks keep their meaning.
+ */
 
 .wf-shell {
   display: flex;
@@ -119,42 +78,6 @@
   line-height: 1;
 }
 .wf-name__edit:hover { color: var(--wf-text); }
-.wf-theme-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 66px;
-  height: 32px;
-  border-radius: 999px;
-  border: 1px solid var(--wf-border);
-  background: var(--wf-panel3);
-  position: relative;
-  cursor: pointer;
-  padding: 0 7px;
-  flex-shrink: 0;
-}
-.wf-theme-toggle__sun,
-.wf-theme-toggle__moon {
-  font-size: 15px;
-  line-height: 1;
-  z-index: 1;
-}
-.wf-theme-toggle__moon { opacity: 0.45; }
-.wf-theme-toggle--light .wf-theme-toggle__sun { opacity: 1; }
-.wf-theme-toggle--light .wf-theme-toggle__moon { opacity: 0.45; }
-.wf-theme-toggle__knob {
-  position: absolute;
-  top: 3px;
-  left: 4px;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: var(--wf-accent);
-  box-shadow: 0 1px 5px rgb(0 0 0 / 0.3);
-  transition: left 0.2s ease;
-}
-.wf-theme-toggle--light .wf-theme-toggle__knob { left: 4px; }
-.wf-theme-toggle--dark .wf-theme-toggle__knob { left: 38px; }
 
 /* ---- buttons ---- */
 .wf-btn {
@@ -212,6 +135,16 @@
   box-shadow: 0 6px 16px rgb(0 0 0 / 0.4);
 }
 .wf-canvas__add:hover { background: var(--wf-panel3h); border-color: #3a4f7a; }
+/* Both drawers open from the same corner: the toggles sit in one row above them. */
+.wf-canvas__tools {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 41;
+  display: flex;
+  gap: 8px;
+}
+.wf-canvas__tools .wf-canvas__add { position: static; }
 
 /* ---- node palette (left drawer) ---- */
 .wf-palette {
@@ -256,6 +189,60 @@
   user-select: none;
 }
 .wf-palette__item:hover { background: var(--wf-panel3); }
+/* The workflow file currently loaded into the canvas. */
+.wf-palette__item--active {
+  background: var(--wf-selected);
+}
+.wf-wfitem__meta { color: var(--wf-muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+/* Per-row ⋯ menu: rename / delete one workflow file. */
+.wf-wfitem__menu {
+  border: 0;
+  background: transparent;
+  color: var(--wf-muted);
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 5px;
+  cursor: pointer;
+  opacity: 0.55;
+}
+.wf-wfitem__menu:hover { opacity: 1; color: var(--wf-text); background: var(--wf-panel3h); }
+.wf-wfitem__pop {
+  position: absolute;
+  z-index: 60;
+  min-width: 116px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-radius: 9px;
+  border: 1px solid var(--wf-border2);
+  background: var(--wf-panel);
+  box-shadow: 0 10px 24px rgb(0 0 0 / 0.45);
+}
+.wf-wfitem__pop button {
+  border: 0;
+  background: transparent;
+  color: var(--wf-text);
+  text-align: left;
+  padding: 6px 9px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.wf-wfitem__pop button:hover { background: var(--wf-panel3); }
+.wf-wfitem__pop-danger:hover { background: color-mix(in srgb, #ef4444 22%, transparent); color: #fca5a5; }
+.wf-wfitem__rename {
+  flex: 1;
+  min-width: 0;
+  background: var(--wf-bg);
+  border: 1px solid var(--wf-accent);
+  border-radius: 6px;
+  color: var(--wf-text);
+  font-size: 12px;
+  padding: 2px 6px;
+}
+.wf-wfitem__rename:focus { outline: none; }
 .wf-palette__icon {
   display: inline-flex;
   align-items: center;
@@ -490,12 +477,24 @@
 }
 .wf-ed--expanded { height: 460px; }
 
-/* ---- full-screen code editor modal ---- */
+/* ---- expanded code editor: a window inside the node-mode page ---- */
+/*
+ * Portaled into the canvas page (`[data-wf-overlay-host]`, see
+ * components/overlayHost.ts) like the scheduled-task board and the guide, not
+ * into `document.body`: these windows may cover the workflow surface, never the
+ * DSH shell around it. The page is `position: relative`, so `inset` frames each
+ * window inside that rectangle instead of the viewport.
+ */
 .wf-editor-modal {
-  position: fixed;
-  inset: 0;
-  z-index: 2147483600;
+  position: absolute;
+  inset: 16px;
+  z-index: 60;
+  box-sizing: border-box;
+  border: 1px solid var(--wf-border2);
+  border-radius: 16px;
+  overflow: hidden;
   background: var(--wf-bg);
+  box-shadow: 0 26px 68px rgba(0, 0, 0, 0.34);
   display: flex;
   flex-direction: column;
   font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
@@ -832,93 +831,87 @@
   border: 2px solid var(--wf-bg) !important;
 }
 
-/* ---- full-screen node-mode overlay ---- */
-.wf-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 100000;
+/* ---- node-mode panel (a `main`-slot page of the shell) ---- */
+/*
+ * The shell gives the panel cell a definite height (the shipped panels size
+ * themselves with height:100%), so the canvas fills the central column without
+ * positioning itself against the viewport.
+ */
+.wf-panel {
+  position: relative; /* bounds the expanded code editor (absolute inset) */
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: var(--wf-bg);
-  display: flex;
-  flex-direction: column;
 }
-.wf-overlay__body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.wf-overlay__body .wf-shell {
+.wf-panel > .wf-shell {
   flex: 1;
   min-height: 0;
 }
 
 /* ========================================================================== */
-/* 2026 UI refresh: visual-only overrides                                      */
+/* Theme tokens — the canvas follows the DSH palette                           */
 /* ========================================================================== */
-
+/*
+ * Every surface, text and border token resolves through the shell's own alias
+ * layer (`--dsw-alias-*`), so the canvas matches the application in both
+ * light and dark — including a theme the user installs later — instead of
+ * approximating it with its own blue palette. The literal fallbacks only apply
+ * in the standalone Vite demo, which has no alias layer; the graph colours
+ * (edges, success state) are derived from the same tokens so they stay legible
+ * on either background.
+ */
 :root {
-  --wf-bg: #08101e;
-  --wf-panel: #0d1728;
-  --wf-panel2: #111e32;
-  --wf-panel3: #172640;
-  --wf-panel3h: #1d3150;
-  --wf-border: #1c2d47;
-  --wf-border2: #29405f;
-  --wf-border3: #365173;
-  --wf-node-border: #314966;
-  --wf-node-border2: #466485;
-  --wf-text: #dce7f8;
-  --wf-text2: #f6f9ff;
-  --wf-muted: #91a4bf;
-  --wf-muted2: #647895;
-  --wf-gutter: #0a1322;
-  --wf-accent: #6f8fff;
-  --wf-accent-dark: #5574e8;
-  --wf-accent-hover: #86a0ff;
-  --wf-on-accent: #07111f;
-  --wf-edge: #7790b0;
-  --wf-edge-active: #35d39a;
-  --wf-edge-active-glow: rgba(53, 211, 154, 0.48);
-  --wf-grid-dot: #28405e;
-  --wf-focus: rgba(111, 143, 255, 0.18);
+  --wf-bg: var(--dsw-alias-bg-base, #151517);
+  --wf-panel: var(--dsw-alias-bg-layer-1, #1a1a1e);
+  --wf-panel2: var(--dsw-alias-bg-layer-2, #1f1f24);
+  --wf-panel3: var(--dsw-alias-bg-overlay, #26262c);
+  --wf-panel3h: var(--dsw-alias-bg-overlay, #2d2d34);
+  --wf-border: var(--dsw-alias-border-l1, #2a2a30);
+  --wf-border2: var(--dsw-alias-border-l2, #34343c);
+  --wf-border3: var(--dsw-alias-border-l2, #3d3d46);
+  --wf-node-border: var(--dsw-alias-border-l2, #34343c);
+  --wf-node-border2: var(--dsw-alias-border-l2, #45454f);
+  --wf-text: var(--dsw-alias-label-primary, #ececee);
+  --wf-text2: var(--dsw-alias-label-primary, #f5f5f7);
+  --wf-muted: var(--dsw-alias-label-secondary, #9b9ba3);
+  --wf-muted2: var(--dsw-alias-state-idle-primary, #7b7b84);
+  --wf-gutter: var(--dsw-alias-bg-layer-2, #1a1a1e);
+  --wf-accent: var(--dsw-alias-brand-primary, #6f8fff);
+  /**
+   * Selected workflow row. The shell's own session-row token
+   * (`--dsw-alias-interactive-bg-hover`) is only a 6% tint and reads as almost
+   * nothing against this panel, so the selection uses a stronger brand tint.
+   * Tune the percentage here to make it louder or quieter.
+   */
+  --wf-selected: color-mix(in srgb, var(--dsw-alias-brand-primary, #6f8fff) 22%, transparent);
+  --wf-accent-dark: color-mix(in srgb, var(--dsw-alias-brand-primary, #6f8fff) 82%, black);
+  --wf-accent-hover: color-mix(in srgb, var(--dsw-alias-brand-primary, #6f8fff) 80%, white);
+  --wf-on-accent: var(--dsw-alias-bg-base, #101013);
+  --wf-edge: color-mix(in srgb, var(--dsw-alias-label-secondary, #9b9ba3) 72%, transparent);
+  --wf-edge-active: var(--dsw-alias-state-success-primary, #35d39a);
+  --wf-edge-active-glow: color-mix(in srgb, var(--dsw-alias-state-success-primary, #35d39a) 48%, transparent);
+  --wf-grid-dot: color-mix(in srgb, var(--dsw-alias-label-secondary, #9b9ba3) 30%, transparent);
+  --wf-focus: color-mix(in srgb, var(--dsw-alias-brand-primary, #6f8fff) 20%, transparent);
   --wf-shadow: rgba(0, 0, 0, 0.42);
   --wf-shadow-panel: 0 18px 48px rgba(0, 0, 0, 0.38), 0 2px 10px rgba(0, 0, 0, 0.2);
 }
 
+/*
+ * Light mode: the page background is pinned to pure white (the reference the
+ * canvas is meant to match) instead of whatever neutral the shell uses, while
+ * surfaces, borders, text and accent keep following the host tokens so the
+ * contrast inside the page stays the application's own.
+ */
 [data-theme="light"] {
-  --wf-bg: #f2f5fa;
-  --wf-panel: #ffffff;
-  --wf-panel2: #f8faff;
-  --wf-panel3: #edf2fa;
-  --wf-panel3h: #e4ebf7;
-  --wf-border: #dce4ef;
-  --wf-border2: #cbd7e7;
-  --wf-border3: #b8c8dc;
-  --wf-node-border: #cad6e6;
-  --wf-node-border2: #9db2cd;
-  --wf-text: #26344a;
-  --wf-text2: #142137;
-  --wf-muted: #647792;
-  --wf-muted2: #8797ad;
-  --wf-gutter: #edf2f8;
-  --wf-accent: #5578ec;
-  --wf-accent-dark: #4164d1;
-  --wf-accent-hover: #6a89ee;
-  --wf-on-accent: #08101e;
-  --wf-edge: #8296b2;
-  --wf-edge-active: #149866;
-  --wf-edge-active-glow: rgba(20, 152, 102, 0.32);
-  --wf-grid-dot: #cad5e4;
-  --wf-focus: rgba(85, 120, 236, 0.16);
-  --wf-shadow: rgba(36, 55, 88, 0.16);
-  --wf-shadow-panel: 0 18px 44px rgba(36, 55, 88, 0.13), 0 2px 8px rgba(36, 55, 88, 0.07);
+  --wf-bg: #ffffff;
 }
 
 .wf-shell,
-.wf-overlay {
-  background:
-    radial-gradient(circle at 50% -20%, rgba(73, 111, 187, 0.1), transparent 34%),
-    var(--wf-bg);
+.wf-panel {
+  background: var(--wf-bg);
 }
 
 .wf-shell {
@@ -1048,6 +1041,161 @@
   background: var(--wf-panel3);
 }
 
+/* ---- execution Workspace picker (Agent nodes run under this Workspace) ---- */
+/*
+ * A plain button plus a menu, not a `<select>`: the closed select is drawn by
+ * the OS and its popup cannot inherit the shell's tokens, which is why the old
+ * pill looked oversized and off-style. Sizes and radii follow the toolbar's own
+ * buttons so the chip reads as one of them.
+ */
+.wf-ws {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+.wf-ws__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  min-height: 28px;
+  box-sizing: border-box;
+  padding: 4px 8px;
+  border: 1px solid var(--wf-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--wf-muted);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 560;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+.wf-ws__button:hover {
+  background: var(--wf-panel2);
+  border-color: var(--wf-border2);
+  color: var(--wf-text);
+}
+.wf-ws__button:focus-visible {
+  outline: 2px solid var(--wf-accent);
+  outline-offset: 1px;
+}
+.wf-ws__button--error {
+  border-color: var(--dsw-alias-state-error-primary, #b4534f);
+  color: var(--dsw-alias-state-error-primary, #f3a9a5);
+}
+.wf-ws__icon {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+.wf-ws__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wf-ws__dot {
+  flex-shrink: 0;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--dsw-alias-state-success-primary, #35d39a);
+}
+.wf-ws__chevron {
+  flex-shrink: 0;
+  opacity: 0.55;
+}
+
+.wf-ws__menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 80;
+  width: 320px;
+  max-width: min(320px, 70vw);
+  box-sizing: border-box;
+  padding: 4px;
+  border: 1px solid var(--wf-border2);
+  border-radius: 10px;
+  background: var(--wf-panel3);
+  box-shadow: var(--wf-shadow-panel);
+}
+.wf-ws__error {
+  padding: 7px 9px;
+  color: var(--dsw-alias-state-error-primary, #f3a9a5);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.wf-ws__empty {
+  padding: 9px;
+  color: var(--wf-muted);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.wf-ws__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 8px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--wf-text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.wf-ws__row:hover {
+  background: var(--wf-panel2);
+}
+.wf-ws__row--active {
+  background: color-mix(in srgb, var(--wf-accent) 12%, transparent);
+}
+.wf-ws__rowCheck {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  flex-shrink: 0;
+  color: var(--wf-accent);
+}
+.wf-ws__rowText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.wf-ws__rowTitle {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--wf-text2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wf-ws__rowPath {
+  font-size: 10.5px;
+  color: var(--wf-muted2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+.wf-ws__rowState {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--wf-muted2);
+  white-space: nowrap;
+}
+.wf-ws__rowState--live {
+  color: var(--dsw-alias-state-success-primary, #35d39a);
+}
+
 .wf-btn {
   min-height: 34px;
   box-sizing: border-box;
@@ -1079,7 +1227,6 @@
 
 .wf-btn:focus-visible,
 .wf-name__edit:focus-visible,
-.wf-theme-toggle:focus-visible,
 .wf-canvas__add:focus-visible {
   outline: 2px solid var(--wf-accent);
   outline-offset: 2px;
@@ -1149,25 +1296,6 @@
   box-shadow: 0 6px 14px rgba(118, 35, 52, 0.12);
 }
 
-.wf-theme-toggle {
-  width: 62px;
-  height: 34px;
-  padding-inline: 7px;
-  border-color: var(--wf-border2);
-  background: var(--wf-panel2);
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
-}
-
-.wf-theme-toggle__knob {
-  top: 4px;
-  width: 24px;
-  height: 24px;
-  background: linear-gradient(180deg, #7696ff, #5878e7);
-  box-shadow: 0 3px 9px rgba(27, 54, 128, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.22);
-}
-
-.wf-theme-toggle--dark .wf-theme-toggle__knob { left: 33px; }
-
 .wf-main,
 .wf-canvas,
 .wf-canvas .react-flow {
@@ -1230,6 +1358,9 @@
   background: color-mix(in srgb, var(--wf-panel) 97%, transparent);
   box-shadow: var(--wf-shadow-panel);
   backdrop-filter: blur(18px);
+  /* The row menu is an absolute child of the panel: let it escape the panel
+     box instead of being clipped at the border radius. */
+  overflow: visible;
 }
 
 .wf-palette__body {
@@ -1555,17 +1686,26 @@
   .wf-btn,
   .wf-canvas__add,
   .wf-palette__item,
-  .wf-node,
-  .wf-theme-toggle__knob {
+  .wf-node {
     transition: none;
   }
 }
 
 /* ---- scheduled-task board ---- */
+/*
+ * Page window, not a viewport overlay: mounted into `[data-wf-overlay-host]`
+ * (see components/overlayHost.ts), so it frames the node-mode page and leaves
+ * the DSH shell around it visible.
+ */
 .wf-schedule-board {
-  position: fixed;
-  inset: 0;
-  z-index: 2147483600;
+  position: absolute;
+  inset: 16px;
+  z-index: 60;
+  box-sizing: border-box;
+  border: 1px solid var(--wf-border2);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 26px 68px rgba(0, 0, 0, 0.34);
   background: var(--wf-bg);
   display: flex;
   flex-direction: column;
@@ -1602,68 +1742,558 @@
   cursor: pointer;
   font-size: 14px;
 }
-.wf-schedule-board__body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 18px 20px 28px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
 .wf-schedule-board__err {
-  color: #ef4444;
+  color: var(--dsw-alias-state-error-primary, #ef4444);
   font-size: 12.5px;
+  padding: 0 20px;
 }
 .wf-schedule-board__empty {
   color: var(--wf-muted);
   font-size: 13px;
 }
-.wf-schedule-board__item {
-  background: var(--wf-panel2);
-  border: 1px solid var(--wf-border2);
-  border-radius: 12px;
-  padding: 14px 16px;
+
+/* ---- board chrome: title row, tabs, search (mirrors the shell's page) ---- */
+.wf-board__head {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 60px;
+  box-sizing: border-box;
+  padding: 0 20px;
+  flex-shrink: 0;
 }
-.wf-schedule-board__line {
+.wf-board__title {
+  font-size: 17px;
+  font-weight: 680;
+  color: var(--wf-text2);
+}
+.wf-board__headActions {
   display: flex;
   align-items: center;
   gap: 10px;
-  flex-wrap: wrap;
 }
-.wf-schedule-board__name {
-  font-weight: 700;
-  color: var(--wf-text2);
-  font-size: 13.5px;
+.wf-board__tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 20px 10px;
+  flex-shrink: 0;
 }
-.wf-schedule-board__cron {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11.5px;
+.wf-board__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
   color: var(--wf-muted);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 560;
+  cursor: pointer;
+}
+.wf-board__tab:hover {
+  background: var(--wf-panel2);
+  color: var(--wf-text);
+}
+.wf-board__tab--active {
   background: var(--wf-panel3);
-  padding: 2px 6px;
-  border-radius: 5px;
+  color: var(--wf-text2);
 }
-.wf-schedule-board__meta {
+.wf-board__tabCount {
+  font-size: 10.5px;
+  color: var(--wf-muted2);
+}
+.wf-board__search {
+  flex: 1 1 auto;
+  max-width: 340px;
+  margin-left: 8px;
+  min-height: 32px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 1px solid var(--wf-border2);
+  border-radius: 8px;
+  background: var(--wf-panel2);
+  color: var(--wf-text);
+  font-family: inherit;
+  font-size: 12.5px;
+}
+.wf-board__search::placeholder {
+  color: var(--wf-muted2);
+}
+.wf-board__search:focus {
+  outline: none;
+  border-color: var(--wf-accent);
+}
+.wf-board__refresh {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--wf-border2);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--wf-muted);
+  cursor: pointer;
+  font-size: 14px;
+}
+.wf-board__refresh:hover:not(:disabled) {
+  background: var(--wf-panel2);
+  color: var(--wf-text);
+}
+.wf-board__refresh:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.wf-board__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 20px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ---- one task: header row + actions + its run history ---- */
+.wf-task {
+  border: 1px solid var(--wf-border);
+  border-radius: 12px;
+  background: var(--wf-panel);
+  overflow: hidden;
+}
+.wf-task__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border: none;
+  background: transparent;
+  color: var(--wf-text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.wf-task__head:hover {
+  background: var(--wf-panel2);
+}
+.wf-task__chevron {
+  flex-shrink: 0;
+  color: var(--wf-muted2);
+  font-size: 11px;
+  transition: transform 0.15s ease;
+}
+.wf-task__chevron--open {
+  transform: rotate(90deg);
+}
+.wf-task__name {
+  font-size: 13.5px;
+  font-weight: 640;
+  color: var(--wf-text2);
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wf-task__cron {
+  flex-shrink: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: var(--wf-muted);
+  background: var(--wf-panel2);
+  border: 1px solid var(--wf-border);
+  padding: 2px 7px;
+  border-radius: 6px;
+}
+.wf-task__badge {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.wf-task__badge--active {
+  color: var(--dsw-alias-state-success-primary, #35d39a);
+  background: color-mix(in srgb, var(--dsw-alias-state-success-primary, #35d39a) 14%, transparent);
+}
+.wf-task__badge--ended {
+  color: var(--wf-muted2);
+  background: var(--wf-panel2);
+}
+.wf-task__meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 11.5px;
   color: var(--wf-muted);
-  gap: 16px;
 }
-.wf-schedule-board__bad--err { color: #ef4444; }
-.wf-schedule-board__actions {
+.wf-task__sep {
+  color: var(--wf-muted2);
+}
+.wf-task__overdue {
+  color: var(--dsw-alias-state-warn-primary, #f0b429);
+  font-weight: 600;
+}
+.wf-task__status {
+  flex-shrink: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.wf-task__status--ok {
+  color: var(--dsw-alias-state-success-primary, #35d39a);
+}
+.wf-task__status--error {
+  color: var(--dsw-alias-state-error-primary, #ef4444);
+}
+.wf-task__actions {
   display: flex;
   gap: 8px;
-  flex-wrap: wrap;
+  padding: 0 14px 10px 36px;
+}
+.wf-task__runs {
+  border-top: 1px solid var(--wf-border);
+  background: var(--wf-panel2);
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.wf-task__noRuns {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--wf-muted2);
+}
+.wf-runRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--wf-text);
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.wf-runRow:hover {
+  background: var(--wf-panel3);
+}
+.wf-runRow__status {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+  font-weight: 700;
+}
+.wf-runRow__status--ok {
+  color: var(--dsw-alias-state-success-primary, #35d39a);
+}
+.wf-runRow__status--error {
+  color: var(--dsw-alias-state-error-primary, #ef4444);
+}
+.wf-runRow__when {
+  flex: 0 0 auto;
+  min-width: 150px;
+  color: var(--wf-text2);
+}
+.wf-runRow__trigger {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--wf-panel3);
+  color: var(--wf-muted);
+  font-size: 10.5px;
+}
+.wf-runRow__nodes {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--wf-muted);
+  font-size: 11.5px;
+}
+.wf-runRow__ms {
+  flex-shrink: 0;
+  color: var(--wf-muted2);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.wf-runRow__open {
+  flex-shrink: 0;
+  color: var(--wf-accent);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+/* ---- one stored run's detail: node table + final output ---- */
+.wf-run-detail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+.wf-run-detail__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 20px 14px;
+  flex-shrink: 0;
+}
+.wf-run-detail__titleBlock {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.wf-run-detail__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 660;
+  color: var(--wf-text2);
+}
+.wf-run-detail__badge {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.wf-run-detail__badge--ok {
+  color: var(--dsw-alias-state-success-primary, #35d39a);
+  background: color-mix(in srgb, var(--dsw-alias-state-success-primary, #35d39a) 14%, transparent);
+}
+.wf-run-detail__badge--error {
+  color: var(--dsw-alias-state-error-primary, #ef4444);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary, #ef4444) 14%, transparent);
+}
+.wf-run-detail__meta {
+  margin-top: 3px;
+  font-size: 11.5px;
+  color: var(--wf-muted);
+}
+.wf-run-detail__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.wf-run-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.wf-run-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 10px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--wf-muted);
+  background: var(--wf-panel);
+  border-bottom: 1px solid var(--wf-border);
+}
+.wf-run-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--wf-border);
+  vertical-align: top;
+}
+.wf-run-table__label {
+  font-weight: 600;
+  color: var(--wf-text2);
+  white-space: nowrap;
+}
+.wf-run-table__kind {
+  color: var(--wf-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.wf-run-table__status {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.wf-run-table__status--ok {
+  color: var(--dsw-alias-state-success-primary, #35d39a);
+}
+.wf-run-table__status--error {
+  color: var(--dsw-alias-state-error-primary, #ef4444);
+}
+.wf-run-table__status--skipped {
+  color: var(--wf-muted2);
+}
+/* Retry history: a small "重试 N 次" badge plus one line per attempt. */
+.wf-run-table__retries {
+  display: block;
+  margin-top: 2px;
+  font-size: 10.5px;
+  color: var(--dsw-alias-state-warning-primary, #eab308);
+  white-space: nowrap;
+}
+.wf-run-table__attempts {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.wf-run-table__attempt {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--wf-muted);
+  padding-left: 8px;
+  border-left: 2px solid var(--wf-line);
+  word-break: break-word;
+}
+.wf-run-table__attempt--error {
+  color: var(--dsw-alias-state-error-primary, #ef4444);
+  border-left-color: var(--dsw-alias-state-error-primary, #ef4444);
+}
+.wf-run-table__attempt--ok {
+  color: var(--dsw-alias-state-success-primary, #35d39a);
+  border-left-color: var(--dsw-alias-state-success-primary, #35d39a);
+}
+.wf-run-table__ms {
+  color: var(--wf-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.wf-run-table__out {
+  max-width: 0;
+  width: 55%;
+}
+.wf-run-table__pre {
+  margin: 0;
+  max-height: 160px;
+  overflow: auto;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--wf-panel2);
+  color: var(--wf-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.wf-run-table__pre--error {
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary, #ef4444) 12%, transparent);
+  color: var(--dsw-alias-state-error-primary, #ef4444);
+}
+.wf-run-table__pre--log {
+  margin-top: 4px;
+  color: var(--wf-muted);
+}
+.wf-run-table__muted {
+  color: var(--wf-muted2);
+}
+.wf-run-detail__output {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.wf-run-detail__outputTitle {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--wf-muted);
+}
+.wf-run-detail__pre {
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--wf-border);
+  border-radius: 8px;
+  background: var(--wf-panel2);
+  color: var(--wf-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---- "viewing a run" banner in the toolbar ---- */
+.wf-runview {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  box-sizing: border-box;
+  padding: 4px 6px 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--wf-accent) 45%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--wf-accent) 10%, transparent);
+  font-size: 11.5px;
+  color: var(--wf-text);
+}
+.wf-runview__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--wf-accent);
+}
+.wf-runview--error .wf-runview__dot {
+  background: var(--dsw-alias-state-error-primary, #ef4444);
+}
+.wf-runview__text {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wf-runview__exit {
+  padding: 3px 8px;
+  border: 1px solid var(--wf-border2);
+  border-radius: 6px;
+  background: var(--wf-panel2);
+  color: var(--wf-text2);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.wf-runview__exit:hover {
+  background: var(--wf-panel3);
+}
+/* Replay banner: floats over the canvas top-centre so no toolbar control can
+   squeeze it or cover its button when the window is narrow. */
+.wf-runview--floating {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 46;
+  max-width: min(560px, calc(100% - 24px));
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(8px);
 }
 
 /* ---- usage help document ---- */
+/* Same page-window treatment as the scheduled-task board. */
 .wf-helpdoc {
-  position: fixed;
-  inset: 0;
-  z-index: 2147483600;
+  position: absolute;
+  inset: 16px;
+  z-index: 60;
+  box-sizing: border-box;
+  border: 1px solid var(--wf-border2);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 26px 68px rgba(0, 0, 0, 0.34);
   background: var(--wf-bg);
   display: flex;
   flex-direction: column;
@@ -1840,3 +2470,67 @@
   margin: 8px 0;
   color: var(--wf-text);
 }
+
+/* ---- listener node (code trigger) ---- */
+.wf-listener {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  border: 1px solid var(--wf-border2);
+  border-radius: 10px;
+  background: var(--wf-panel2);
+}
+.wf-listener__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--wf-muted);
+}
+.wf-listener__dot--running { background: var(--dsw-alias-state-success-primary, #35d39a); }
+.wf-listener__dot--error { background: var(--dsw-alias-state-error-primary, #ef4444); }
+.wf-listener__state {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--wf-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wf-field-hint {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--wf-muted);
+  margin: 4px 0 8px;
+}
+.wf-field-hint--error { color: var(--dsw-alias-state-error-primary, #ef4444); }
+/* Listener detail header: run-list title with its "clear history" action. */
+.wf-runHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 4px;
+  color: var(--wf-muted);
+  font-size: 11.5px;
+}
+.wf-task__tab {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--wf-muted);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.wf-task__tab:hover { color: var(--wf-text); }
+.wf-task__tab--active {
+  color: var(--wf-text);
+  background: var(--wf-panel3);
+  border-color: var(--wf-border2);
+}
+

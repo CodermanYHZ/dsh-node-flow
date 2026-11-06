@@ -6,6 +6,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ReactFlow, Background, Controls, MiniMap, BackgroundVariant } from '@xyflow/react'
+// The plugin bundle inlines this stylesheet once (see scripts/build-client.mjs);
+// the standalone Vite demo needs this import. esbuild drops it as a bare import.
 import './canvas.css'
 import { useCanvasStore } from '../store/canvas.js'
 import type { WorkflowNodeType } from '../model.js'
@@ -13,15 +15,16 @@ import { WorkflowNodeView } from '../nodes/WorkflowNodeView.js'
 import { Toolbar } from './Toolbar.js'
 import { Inspector } from './Inspector.js'
 import { NodePalette } from './NodePalette.js'
-import './canvas.css'
+import { WorkflowLibrary, WORKFLOW_DRAG_TYPE, loadWorkflowFile } from './WorkflowLibrary.js'
 
 const nodeTypes = { workflow: WorkflowNodeView }
 
 const DEFAULT_LABELS: Record<string, string> = {
   trigger: '触发器',
   schedule: '定时触发',
+  listen: '监听',
   agent: 'Agent',
-  code: '代码执行',
+  code: 'Python 脚本',
   output: '输出',
   if: 'If',
   switch: 'Switch',
@@ -43,7 +46,9 @@ export function Canvas({ onExitNodeMode }: { onExitNodeMode?: () => void } = {})
   const selectEdge = useCanvasStore((s) => s.selectEdge)
   const addNodeAt = useCanvasStore((s) => s.addNodeAt)
   const selectedId = useCanvasStore((s) => s.selectedId)
-  const [paletteOpen, setPaletteOpen] = useState(false)
+  const viewingRun = useCanvasStore((s) => s.viewingRun)
+  const exitRunView = useCanvasStore((s) => s.exitRunView)
+  const [openPanel, setOpenPanel] = useState<'nodes' | 'workflows' | null>(null)
   const rfRef = useRef<RFInstance | null>(null)
   const renderedEdges = useMemo(() => {
     const activeIds = new Set(activeEdgeIds)
@@ -85,6 +90,11 @@ export function Canvas({ onExitNodeMode }: { onExitNodeMode?: () => void } = {})
 
   const onDrop = (e: React.DragEvent): void => {
     e.preventDefault()
+    const workflowId = e.dataTransfer.getData(WORKFLOW_DRAG_TYPE)
+    if (workflowId) {
+      void loadWorkflowFile(workflowId)
+      return
+    }
     const kind = e.dataTransfer.getData('application/reactflow') as WorkflowNodeType
     if (!kind || !rfRef.current) return
     const pos = rfRef.current.screenToFlowPosition({ x: e.clientX, y: e.clientY })
@@ -134,10 +144,36 @@ export function Canvas({ onExitNodeMode }: { onExitNodeMode?: () => void } = {})
               }}
             />
           </ReactFlow>
-          <button className="wf-canvas__add" onClick={() => setPaletteOpen((v) => !v)}>
-            {paletteOpen ? '✕' : '➕ 添加节点'}
-          </button>
-          {paletteOpen && <NodePalette />}
+          {viewingRun !== null && (
+            <div
+              className={`wf-runview wf-runview--floating wf-runview--${viewingRun.status}`}
+              title={`${viewingRun.workflowName} · ${new Date(viewingRun.startedAt).toLocaleString()}`}
+            >
+              <span className="wf-runview__dot" aria-hidden="true" />
+              <span className="wf-runview__text">
+                正在查看 {new Date(viewingRun.startedAt).toLocaleString()} 的运行
+              </span>
+              <button className="wf-runview__exit" onClick={exitRunView}>
+                返回编辑
+              </button>
+            </div>
+          )}
+          <div className="wf-canvas__tools">
+            <button
+              className="wf-canvas__add"
+              onClick={() => setOpenPanel((v) => (v === 'nodes' ? null : 'nodes'))}
+            >
+              {openPanel === 'nodes' ? '✕' : '➕ 添加节点'}
+            </button>
+            <button
+              className="wf-canvas__add"
+              onClick={() => setOpenPanel((v) => (v === 'workflows' ? null : 'workflows'))}
+            >
+              {openPanel === 'workflows' ? '✕' : '📂 工作流'}
+            </button>
+          </div>
+          {openPanel === 'nodes' && <NodePalette />}
+          {openPanel === 'workflows' && <WorkflowLibrary />}
         </div>
         {selectedId && <Inspector />}
       </div>

@@ -2,8 +2,8 @@
  * Workflow data model for dsh-node-flow.
  *
  * The model is deliberately transport-agnostic: nodes/edges serialise to a
- * plain JSON workflow that can be handed to DSH's `ctx.workflows` service, so
- * the canvas is only ever a *view* over a DSH-native workflow spec.
+ * plain JSON workflow that the host can store and re-walk for scheduled runs,
+ * so the canvas is only ever a *view* over one document.
  *
  * @module model
  */
@@ -14,12 +14,13 @@ import type { Node, Edge } from '@xyflow/react'
 export type WorkflowNodeType =
   | 'trigger' // entry point / prompt trigger
   | 'schedule' // cron-triggered entry point (host schedules the flow)
+  | 'listen' // resident listener entry point (host keeps a script running;每行 stdout 触发一次)
   | 'agent' // delegate to a sub-agent
   | 'if' // boolean branch: routes to "true" or "false" source handle
   | 'switch' // value branch: routes to a matching case source handle (or "default")
   | 'loop' // repeat a body over an array or N times (iterate / done / back)
   | 'while' // repeat a body while a condition holds (iterate / done / back)
-  | 'code' // execute code on the DSH host (ctx.codeRuntime)
+  | 'code' // run a Python program on the DSH host (stdout becomes the node value)
   | 'output' // terminal result
   | 'note' // a free annotation (no connection handles)
 
@@ -37,6 +38,8 @@ export type CodeRunOutcome = {
   at: string
   /** Elapsed milliseconds for the node's run (best-effort client timing). */
   duration?: number
+  /** Per-attempt history, only present when the node had to be retried. */
+  attempts?: Array<{ attempt: number; status: 'ok' | 'error'; ms: number; error?: string }>
   /** True while a run is in flight. */
   running?: boolean
 }
@@ -72,9 +75,17 @@ export type WorkflowNodeData = {
   maxIters?: string
   /** Collect every iteration's result into an array delivered to `done`. */
   collect?: boolean
-  /** Code source (kind === 'code'). */
+  /** Code source (kind === 'code' | 'listen'). */
   code?: string
-  /** Code language (kind === 'code'); defaults to 'typescript'. */
+  /**
+   * kind === 'listen': the resident Python script whose stdout lines fire the
+   * flow. `minIntervalMs` coalesces event bursts on the host (default 500).
+   */
+  minIntervalMs?: string
+  /** kind === 'listen': remembered user intent for restoring on host start. */
+  enabled?: boolean
+  /** Code language (kind === 'code'). Python only; the field is kept for
+   *  document compatibility and older canvases are re-run as Python. */
   language?: string
   /** Per-node runtime timeout in seconds (kind === 'code' | 'agent'); the host
    *  aborts the run past this and the node is recorded as a failure. */
@@ -82,6 +93,10 @@ export type WorkflowNodeData = {
   /** Failure behavior (kind === 'code' | 'agent'): 'stop' (default) cuts the
    *  branch when the node fails; 'continue' keeps going with an empty value. */
   onError?: string
+  /** Extra attempts when this node fails, 0-5 (default 0 = no retry). */
+  retries?: string
+  /** Delay between retry attempts in milliseconds, 0-10000 (default 0). */
+  retryDelayMs?: string
   /** Last execution outcome (kind === 'code'), set after a run. */
   lastRun?: CodeRunOutcome
   /** Output template / summary (kind === 'output'). */
@@ -102,6 +117,14 @@ export type WorkflowDocument = {
   version: 1
   name: string
   description?: string
+  /**
+   * Workspace this workflow executes in. Agent nodes delegate from that
+   * Workspace's runner session, so the child inherits its directory and sandbox
+   * boundary; scheduled runs read it from the document (there is no UI then).
+   */
+  executionWorkspaceId?: string
+  /** Display-only title of `executionWorkspaceId`, for the toolbar chip. */
+  executionWorkspaceTitle?: string
   nodes: WorkflowNode[]
   edges: WorkflowEdge[]
 }
@@ -110,6 +133,7 @@ export type WorkflowDocument = {
 export const NODE_SIZE: Record<WorkflowNodeType, { width: number; height: number }> = {
   trigger: { width: 124, height: 124 },
   schedule: { width: 124, height: 124 },
+  listen: { width: 124, height: 124 },
   agent: { width: 212, height: 128 },
   if: { width: 132, height: 132 },
   switch: { width: 132, height: 132 },
@@ -124,8 +148,13 @@ export const NODE_SIZE: Record<WorkflowNodeType, { width: number; height: number
 let seq = 0
 export function createNode(kind: WorkflowNodeType, label: string, position: { x: number; y: number }): WorkflowNode {
   const size = NODE_SIZE[kind]
-  // Agent / code default to a 120s runtime timeout (user may clear it for "no limit").
-  const data: WorkflowNodeData = kind === 'agent' || kind === 'code' ? { kind, label, timeout: '120' } : { kind, label }
+  // Agent / code default to a 120s runtime timeout (user may change it).
+  const data: WorkflowNodeData =
+    kind === 'agent' || kind === 'code'
+      ? { kind, label, timeout: '120', ...(kind === 'code' ? { language: 'python' } : {}) }
+      : kind === 'listen'
+        ? { kind, label, minIntervalMs: '500' }
+        : { kind, label }
   return {
     id: `${kind}-${++seq}-${Date.now().toString(36)}`,
     type: 'workflow',
@@ -138,9 +167,10 @@ export function createNode(kind: WorkflowNodeType, label: string, position: { x:
 }
 
 /**
- * Flatten a canvas workflow into an ordered step list — the bridge to DSH's
- * `ctx.workflows`. Breadth-first from every trigger; conditions become
- * conditional steps with `then`/`else` targets derived from edges.
+ * Flatten a canvas workflow into an ordered step list — the compact form the
+ * schedule records store beside the full document. Breadth-first from every
+ * trigger; conditions become conditional steps with `then`/`else` targets
+ * derived from edges.
  */
 export function toStepList(doc: WorkflowDocument): unknown[] {
   const byId = new Map(doc.nodes.map((n) => [n.id, n]))
@@ -159,6 +189,9 @@ export function toStepList(doc: WorkflowDocument): unknown[] {
       step.text = d.text
       step.cron = d.cron
       step.timezone = d.timezone
+    } else if (d.kind === 'listen') {
+      step.code = d.code
+      step.minIntervalMs = d.minIntervalMs
     } else if (d.kind === 'agent') {
       step.prompt = d.prompt
       if (d.model) step.model = d.model
@@ -178,7 +211,7 @@ export function toStepList(doc: WorkflowDocument): unknown[] {
       step.maxIters = d.maxIters
     } else if (d.kind === 'code') {
       step.code = d.code
-      step.language = d.language ?? 'typescript'
+      step.language = 'python'
       if (d.timeout) step.timeout = d.timeout
     } else if (d.kind === 'output') {
       step.template = d.template
@@ -191,7 +224,7 @@ export function toStepList(doc: WorkflowDocument): unknown[] {
   }
 
   for (const n of doc.nodes) {
-    if (n.data.kind === 'trigger' || n.data.kind === 'schedule') emit(n.id)
+    if (n.data.kind === 'trigger' || n.data.kind === 'schedule' || n.data.kind === 'listen') emit(n.id)
   }
   return out
 }
@@ -215,11 +248,14 @@ export function buildWeatherExample(): WorkflowDocument {
       data: {
         kind: 'code',
         label: '拉取天气',
-        language: 'typescript',
+        language: 'python',
         code: [
-          'const r = await dsh.fetch({ url: \'https://api.open-meteo.com/v1/forecast?latitude=31.23&longitude=121.47&current=temperature_2m,weather_code&timezone=Asia%2FShanghai\' })',
-          'if (!r.ok) throw new Error(\'天气接口失败: HTTP \' + r.status)',
-          'return JSON.stringify({ temp: r.json?.current?.temperature_2m, code: r.json?.current?.weather_code })',
+          'import json, urllib.request',
+          "url = 'https://api.open-meteo.com/v1/forecast?latitude=31.23&longitude=121.47&current=temperature_2m,weather_code&timezone=Asia%2FShanghai'",
+          'with urllib.request.urlopen(url, timeout=20) as r:',
+          '    data = json.load(r)',
+          "cur = data.get('current') or {}",
+          "print(json.dumps({'temp': cur.get('temperature_2m'), 'code': cur.get('weather_code')}, ensure_ascii=False))",
         ].join('\n'),
       },
     },
@@ -295,7 +331,7 @@ export function buildNewsExample(): WorkflowDocument {
 export function buildBasicIfExample(): WorkflowDocument {
   const nodes: WorkflowNode[] = [
     { id: 'b-trig', type: 'workflow', position: { x: 20, y: 240 }, data: { kind: 'trigger', label: '入口', text: '判断一个数是否大于 10' } },
-    { id: 'b-code', type: 'workflow', position: { x: 200, y: 240 }, data: { kind: 'code', label: '生成一个数', language: 'typescript', code: 'return JSON.stringify({ n: 15 })' } },
+    { id: 'b-code', type: 'workflow', position: { x: 200, y: 240 }, data: { kind: 'code', label: '生成一个数', language: 'python', code: ['import json', "print(json.dumps({'n': 15}))"].join('\n') } },
     { id: 'b-if', type: 'workflow', position: { x: 400, y: 240 }, data: { kind: 'if', label: '大于10?', condition: 'Number(JSON.parse(result).n) > 10' } },
     { id: 'b-true', type: 'workflow', position: { x: 620, y: 100 }, data: { kind: 'output', label: '大于10', template: '这个数 {{result}} 大于 10' } },
     { id: 'b-false', type: 'workflow', position: { x: 620, y: 360 }, data: { kind: 'output', label: '≤10', template: '这个数 {{result}} 小于等于 10' } },
@@ -331,7 +367,7 @@ export function buildQaIfExample(): WorkflowDocument {
 export function buildDailySwitchExample(): WorkflowDocument {
   const nodes: WorkflowNode[] = [
     { id: 'd-trig', type: 'workflow', position: { x: 20, y: 240 }, data: { kind: 'trigger', label: '问候', text: '按当前时间给问候' } },
-    { id: 'd-code', type: 'workflow', position: { x: 200, y: 240 }, data: { kind: 'code', label: '取时段', language: 'typescript', code: "const h = new Date().getHours(); const label = h < 12 ? 'morning' : h < 18 ? 'afternoon' : 'evening'; return label" } },
+    { id: 'd-code', type: 'workflow', position: { x: 200, y: 240 }, data: { kind: 'code', label: '取时段', language: 'python', code: ['import datetime', 'h = datetime.datetime.now().hour', "print('morning' if h < 12 else ('afternoon' if h < 18 else 'evening'))"].join('\n') } },
     { id: 'd-sw', type: 'workflow', position: { x: 420, y: 240 }, data: { kind: 'switch', label: '按时段', condition: 'result', cases: 'morning, afternoon, evening' } },
     { id: 'd-m', type: 'workflow', position: { x: 660, y: 60 }, data: { kind: 'output', label: '早上', template: '早上好 ☀️，新的一天开始啦' } },
     { id: 'd-a', type: 'workflow', position: { x: 660, y: 220 }, data: { kind: 'output', label: '下午', template: '下午好 ☕，继续加油' } },
@@ -354,7 +390,7 @@ export function buildLoopExample(): WorkflowDocument {
   const nodes: WorkflowNode[] = [
     { id: 'lp-trig', type: 'workflow', position: { x: 20, y: 240 }, data: { kind: 'trigger', label: '热点列表', text: '["AI 大模型再突破","芯片供应回暖","开源社区新进展"]' } },
     { id: 'lp-loop', type: 'workflow', position: { x: 220, y: 240 }, data: { kind: 'loop', label: '遍历热点', mode: 'items', itemsExpr: 'JSON.parse(result)', maxIters: '100', collect: true } },
-    { id: 'lp-code', type: 'workflow', position: { x: 440, y: 240 }, data: { kind: 'code', label: '读取本条', language: 'typescript', code: ['const it = await dsh.input(null)', 'return String(it)'].join('\n') } },
+    { id: 'lp-code', type: 'workflow', position: { x: 440, y: 240 }, data: { kind: 'code', label: '读取本条', language: 'python', code: ['import os', "print(os.environ.get('DSH_INPUT', ''))"].join('\n') } },
     { id: 'lp-if', type: 'workflow', position: { x: 660, y: 240 }, data: { kind: 'if', label: '含AI?', condition: 'result.includes("AI")' } },
     {
       id: 'lp-agent', type: 'workflow', position: { x: 880, y: 120 },
@@ -385,7 +421,7 @@ export function buildWhileExample(): WorkflowDocument {
     { id: 'wh-while', type: 'workflow', position: { x: 220, y: 240 }, data: { kind: 'while', label: '直到完成', condition: 'result !== "完成"', maxIters: '100', collect: true } },
     {
       id: 'wh-code', type: 'workflow', position: { x: 440, y: 240 },
-      data: { kind: 'code', label: '状态机', language: 'typescript', code: ['const s = await dsh.input(null)', "if (s === '待处理') return '处理中'", "if (s === '处理中') return '完成'", 'return s'].join('\n') },
+      data: { kind: 'code', label: '状态机', language: 'python', code: ['import os', "s = os.environ.get('DSH_INPUT', '').strip()", "if s == '待处理':", "    print('处理中')", "elif s == '处理中':", "    print('完成')", 'else:', '    print(s)'].join('\n') },
     },
     { id: 'wh-if', type: 'workflow', position: { x: 660, y: 240 }, data: { kind: 'if', label: '是否处理中?', condition: 'result === "处理中"' } },
     { id: 'wh-out', type: 'workflow', position: { x: 220, y: 480 }, data: { kind: 'output', label: '状态推进', template: '状态推进: {{result}}' } },
@@ -400,3 +436,20 @@ export function buildWhileExample(): WorkflowDocument {
   ]
   return { version: 1, name: 'While · 状态轮询', description: '用字符串状态(待处理→处理中→完成)判断，直到状态变为"完成"才停，收集每次推进', nodes, edges }
 }
+
+/**
+ * Built-in templates. The host writes each one into
+ * `$DSH_HOME/workflow-canvas/workflows/<id>.json` the first time the plugin
+ * activates (an existing directory is never re-seeded), so the library and the
+ * "添加节点" drawer read the same files.
+ */
+export const BUILTIN_EXAMPLES: Array<{ id: string; name: string; build: () => WorkflowDocument }> = [
+  { id: 'example-weather', name: '天气', build: buildWeatherExample },
+  { id: 'example-news', name: '定时新闻', build: buildNewsExample },
+  { id: 'example-if', name: 'If 分流', build: buildBasicIfExample },
+  { id: 'example-qa-if', name: 'AI 问答', build: buildQaIfExample },
+  { id: 'example-switch', name: 'Switch 时段', build: buildDailySwitchExample },
+  { id: 'example-loop', name: 'Loop 数组', build: buildLoopExample },
+  { id: 'example-while', name: 'While 计数', build: buildWhileExample },
+]
+

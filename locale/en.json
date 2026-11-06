@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Node Workflow",
+    "description": "Visual canvas for DSH: orchestrate sub-agents, code, conditions, loops and scheduled runs as a node graph."
+  }
+}

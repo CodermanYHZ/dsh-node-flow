@@ -2,14 +2,14 @@
  * Workflow data model for dsh-node-flow.
  *
  * The model is deliberately transport-agnostic: nodes/edges serialise to a
- * plain JSON workflow that can be handed to DSH's `ctx.workflows` service, so
- * the canvas is only ever a *view* over a DSH-native workflow spec.
+ * plain JSON workflow that the host can store and re-walk for scheduled runs,
+ * so the canvas is only ever a *view* over one document.
  *
  * @module model
  */
 import type { Node, Edge } from '@xyflow/react';
 /** Node kinds the canvas understands. */
-export type WorkflowNodeType = 'trigger' | 'schedule' | 'agent' | 'if' | 'switch' | 'loop' | 'while' | 'code' | 'output' | 'note';
+export type WorkflowNodeType = 'trigger' | 'schedule' | 'listen' | 'agent' | 'if' | 'switch' | 'loop' | 'while' | 'code' | 'output' | 'note';
 /** Outcome of the last code-node execution, shown in the inspector. */
 export type CodeRunOutcome = {
     /** The input this node received from the upstream flow (the `dsh.input()` value). */
@@ -24,6 +24,13 @@ export type CodeRunOutcome = {
     at: string;
     /** Elapsed milliseconds for the node's run (best-effort client timing). */
     duration?: number;
+    /** Per-attempt history, only present when the node had to be retried. */
+    attempts?: Array<{
+        attempt: number;
+        status: 'ok' | 'error';
+        ms: number;
+        error?: string;
+    }>;
     /** True while a run is in flight. */
     running?: boolean;
 };
@@ -58,9 +65,17 @@ export type WorkflowNodeData = {
     maxIters?: string;
     /** Collect every iteration's result into an array delivered to `done`. */
     collect?: boolean;
-    /** Code source (kind === 'code'). */
+    /** Code source (kind === 'code' | 'listen'). */
     code?: string;
-    /** Code language (kind === 'code'); defaults to 'typescript'. */
+    /**
+     * kind === 'listen': the resident Python script whose stdout lines fire the
+     * flow. `minIntervalMs` coalesces event bursts on the host (default 500).
+     */
+    minIntervalMs?: string;
+    /** kind === 'listen': remembered user intent for restoring on host start. */
+    enabled?: boolean;
+    /** Code language (kind === 'code'). Python only; the field is kept for
+     *  document compatibility and older canvases are re-run as Python. */
     language?: string;
     /** Per-node runtime timeout in seconds (kind === 'code' | 'agent'); the host
      *  aborts the run past this and the node is recorded as a failure. */
@@ -68,6 +83,10 @@ export type WorkflowNodeData = {
     /** Failure behavior (kind === 'code' | 'agent'): 'stop' (default) cuts the
      *  branch when the node fails; 'continue' keeps going with an empty value. */
     onError?: string;
+    /** Extra attempts when this node fails, 0-5 (default 0 = no retry). */
+    retries?: string;
+    /** Delay between retry attempts in milliseconds, 0-10000 (default 0). */
+    retryDelayMs?: string;
     /** Last execution outcome (kind === 'code'), set after a run. */
     lastRun?: CodeRunOutcome;
     /** Output template / summary (kind === 'output'). */
@@ -87,6 +106,14 @@ export type WorkflowDocument = {
     version: 1;
     name: string;
     description?: string;
+    /**
+     * Workspace this workflow executes in. Agent nodes delegate from that
+     * Workspace's runner session, so the child inherits its directory and sandbox
+     * boundary; scheduled runs read it from the document (there is no UI then).
+     */
+    executionWorkspaceId?: string;
+    /** Display-only title of `executionWorkspaceId`, for the toolbar chip. */
+    executionWorkspaceTitle?: string;
     nodes: WorkflowNode[];
     edges: WorkflowEdge[];
 };
@@ -100,9 +127,10 @@ export declare function createNode(kind: WorkflowNodeType, label: string, positi
     y: number;
 }): WorkflowNode;
 /**
- * Flatten a canvas workflow into an ordered step list — the bridge to DSH's
- * `ctx.workflows`. Breadth-first from every trigger; conditions become
- * conditional steps with `then`/`else` targets derived from edges.
+ * Flatten a canvas workflow into an ordered step list — the compact form the
+ * schedule records store beside the full document. Breadth-first from every
+ * trigger; conditions become conditional steps with `then`/`else` targets
+ * derived from edges.
  */
 export declare function toStepList(doc: WorkflowDocument): unknown[];
 /**
@@ -121,3 +149,14 @@ export declare function buildDailySwitchExample(): WorkflowDocument;
 export declare function buildLoopExample(): WorkflowDocument;
 /** While 示例：用字符串状态（待处理→处理中→完成）做判断，直到状态变为"完成"才停。 */
 export declare function buildWhileExample(): WorkflowDocument;
+/**
+ * Built-in templates. The host writes each one into
+ * `$DSH_HOME/workflow-canvas/workflows/<id>.json` the first time the plugin
+ * activates (an existing directory is never re-seeded), so the library and the
+ * "添加节点" drawer read the same files.
+ */
+export declare const BUILTIN_EXAMPLES: Array<{
+    id: string;
+    name: string;
+    build: () => WorkflowDocument;
+}>;

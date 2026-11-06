@@ -36,6 +36,11 @@ DSH Node Flow is a visual workflow plugin for [DeepSeek Harness (DSH)](https://g
 
 ## Screenshots
 
+The canvas defines no palette of its own: background, surfaces, text, borders and accent all
+come from the host's `--dsw-alias-*` theme tokens, so it matches the shell in both light and
+dark and follows a theme change (the screenshots below still show the earlier blue palette and
+are kept for layout reference).
+
 ### Node properties
 
 Select a node to configure its label, model, prompt, timeout, and failure policy in the right-hand inspector.
@@ -50,29 +55,44 @@ The scheduled-task board displays cron plans, previous trigger times, and latest
 
 ## Quick start
 
+### Compatibility
+
+This version targets **DSH 0.2.x** (verified on `0.2.1-rc.2`). The host half uses two
+services that replaced earlier seams:
+
+| Capability | Uses | Note |
+| --- | --- | --- |
+| Code nodes (TypeScript) | `ctx.ptcRuntime` | `ctx.codeRuntime` was removed in 0.2.x; programs run as a `function-body` |
+| Agent nodes | `ctx.subagents.startActivation` | `subagents.start()` was removed; the child's result comes back with `delivery: 'caller'` |
+| Model dropdown | `ctx.llm.listProviders()` / `listModels()` | `listProviders()` is synchronous in 0.2.x |
+| Sidebar entry and canvas | the `main` + `sidebar.panellist` slots | no shell DOM or class names are read any more (`sidebarCol` / `logoRow` no longer exist) |
+
+The minimum host version is declared in `package.json` under `engines.dsh`.
+
 ### Installation
 
-The package has not been published to npm. Install it directly from the public GitHub repository:
+Install from a local directory or from Git until the package is published to npm:
 
 ```sh
-dsh plugin --profile web add git+https://github.com/CodermanYHZ/dsh-node-flow.git
+dsh plugin --profile <profile> add /path/to/dsh-workflow-canvas
+dsh plugin --profile <profile> add git+https://github.com/CodermanYHZ/dsh-node-flow.git
 ```
 
-When running DSH from a DeepSeek Harness source checkout, use:
+When running DSH from a DeepSeek Harness source checkout, prefix the command with
+`pnpm`, for example `pnpm dsh plugin --profile <profile> add <path>`.
 
-```sh
-pnpm dsh plugin --profile web add git+https://github.com/CodermanYHZ/dsh-node-flow.git
-```
+Restart the Web UI after installation (`dsh web`; `pnpm dsh web` for a source checkout).
 
-Restart the Web UI after installation:
+A **Node Mode** icon appears in the DSH sidebar; clicking it opens the canvas in the
+central column.
 
-```sh
-dsh web
-```
+### Diagnostics
 
-For a source checkout, the corresponding command is `pnpm dsh web`.
-
-Open **Node Mode** from the DSH sidebar to start building workflows.
+On activation the plugin writes a capability snapshot to
+`$DSH_HOME/workflow-canvas/health.json`; `selfTest.ok` records whether a real
+TypeScript execution succeeded. The same report is served by
+`GET /dsh-node-flow/health`. Check it first when a Code node reports an
+unavailable runtime.
 
 ### Basic usage
 
@@ -80,6 +100,45 @@ Open **Node Mode** from the DSH sidebar to start building workflows.
 2. Connect node handles and configure parameters in the right-hand inspector.
 3. Click **▶ Run** and watch the node states and highlighted execution path.
 4. Use **Export** to save the workflow as a file, or create a cron schedule from **Scheduled Tasks**.
+
+### Execution Workspace and runner session
+
+Agent nodes do not delegate from "whatever agent happens to be live". The **📁 Workspace**
+selector in the toolbar decides which Workspace a run belongs to:
+
+- Each Workspace owns one **node-mode runner session**, titled
+  `节点模式运行会话 · <workspace>` and listed among that Workspace's sessions.
+- The first Agent-node run in a Workspace creates it; later runs reuse it; if it is
+  archived or can no longer be revived, the next run creates a fresh one.
+- Creation sends one **one-off** bootstrap message (`节点模式运行会话已就绪…`). That is
+  not decoration: the sidebar does not render a session that has no messages, and a
+  runner session never gains any on its own (children hand their result back to the
+  canvas with `delivery: 'caller'`), so without it the row would stay invisible forever.
+- Agent nodes execute as children of that session, so they inherit the Workspace's
+  directory and sandbox write boundary. That inheritance is the only way to direct a
+  child: the host ignores `startActivation`'s `cwd` argument.
+- The choice is saved as `executionWorkspaceId` in the workflow document, so export,
+  import and scheduled runs all use the same Workspace.
+
+Bindings live in `$DSH_HOME/workflow-canvas/settings.json`; the `runner` section of
+`GET /dsh-node-flow/health` reports each Workspace's session id, liveness and visibility.
+
+### Scheduled tasks and run history
+
+A scheduled task does not poll "does the current minute match the cron?". It persists the
+**next occurrence** (`nextFireAt`) and a single timer compares that anchor with now:
+
+- The anchor advances and is persisted BEFORE the workflow runs, so a crash costs that one
+  run instead of replaying the same occurrence forever.
+- An occurrence missed while the host was stopped or the machine asleep is delivered **once**
+  on the next wake-up (not N times), then the anchor jumps to the next future time.
+- If the previous run of the same task has not settled yet, the new occurrence is skipped and
+  logged, so one workflow cannot execute concurrently with itself.
+- Every run is stored in `$DSH_HOME/workflow-canvas/runs/<runId>.json` with **its own graph
+  snapshot**, each node's status/duration/output/error, and the final output; 30 days and 200
+  records are retained, older ones pruned.
+- **Manual runs are stored the same way**, so the Scheduled-tasks panel can show every run of
+  the workflow and replay any of them on the canvas without touching the graph being edited.
 
 ## Companion AI Skill
 
@@ -141,10 +200,13 @@ print(previous)
 
 The plugin expects the DSH host to provide these services:
 
-- `ctx.webServer`
-- `ctx.codeRuntime` for Code nodes
-- `ctx.agents` and `ctx.subagents` for Agent nodes
-- `ctx.llm` for the model-route list
+- `ctx.webServer` for the same-origin routes between canvas and host
+- `ctx.ptcRuntime` for TypeScript Code nodes (Python runs in a host subprocess)
+- `ctx.agents` and `ctx.subagents` for Agent nodes (via `startActivation`)
+- `ctx.llm` for the model-route list behind the Agent node's dropdown
+
+The client half needs the `slots` service (`main` and `sidebar.panellist`) and,
+optionally, `layout` for the panel's close action.
 
 React, ReactDOM, and `@deepseek-ai/cordis` are provided by DSH as peer dependencies.
 

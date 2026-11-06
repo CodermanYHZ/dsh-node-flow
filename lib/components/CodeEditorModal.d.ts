@@ -1,6 +1,9 @@
 /**
- * Full-screen code editor modal — opened from the code node card's "展开"
- * button so editing has the whole node-mode surface to work in.
+ * Expanded code editor — a window inside the node-mode page.
+ *
+ * Mounted through `overlayHost()` (see components/overlayHost.ts), so expanding
+ * the editor fills the workflow surface while the DSH shell around it stays
+ * visible, instead of covering the whole application window.
  *
  * @module components/CodeEditorModal
  */

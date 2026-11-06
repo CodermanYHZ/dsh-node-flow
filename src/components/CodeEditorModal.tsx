@@ -1,14 +1,17 @@
 /**
- * Full-screen code editor modal — opened from the code node card's "展开"
- * button so editing has the whole node-mode surface to work in.
+ * Expanded code editor — a window inside the node-mode page.
+ *
+ * Mounted through `overlayHost()` (see components/overlayHost.ts), so expanding
+ * the editor fills the workflow surface while the DSH shell around it stays
+ * visible, instead of covering the whole application window.
  *
  * @module components/CodeEditorModal
  */
 
 import { createPortal } from 'react-dom'
-import { useCanvasStore } from '../store/canvas.js'
 import compressArrowsIcon from '../assets/icons/compress-arrows-alt.svg'
 import { CodeEditor } from './CodeEditor.js'
+import { overlayHost } from './overlayHost.js'
 
 export function CodeEditorModal({
   value,
@@ -21,22 +24,18 @@ export function CodeEditorModal({
   language: string
   onClose: () => void
 }) {
-  const theme = useCanvasStore((state) => state.theme)
-
   return createPortal(
+    // Colours come from the page this mounts into (`data-theme` on .wf-panel),
+    // so the window carries no palette of its own.
     <div
       className="wf-editor-modal"
-      data-theme={theme}
       role="dialog"
-      aria-modal="true"
       aria-labelledby="wf-editor-modal-title"
     >
       <div className="wf-editor-modal__head">
         <div className="wf-editor-modal__heading">
           <span id="wf-editor-modal-title" className="wf-editor-modal__title">代码编辑器</span>
-          <span className="wf-editor-modal__language">
-            {language === 'python' ? 'Python' : 'TypeScript'}
-          </span>
+          <span className="wf-editor-modal__language">Python</span>
         </div>
         <button
           type="button"
@@ -52,6 +51,6 @@ export function CodeEditorModal({
         <CodeEditor value={value} onChange={onChange} language={language} />
       </div>
     </div>,
-    document.body,
+    overlayHost(),
   )
 }

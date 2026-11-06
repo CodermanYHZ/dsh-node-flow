@@ -13,6 +13,23 @@ import type { WorkflowNodeData } from '../model.js'
 
 type AgentModel = { provider: string; id: string; name: string }
 
+/** One resident listener as reported by `/dsh-node-flow/listeners`. */
+type ListenerInfo = {
+  workflowId: string
+  nodeId: string
+  label: string
+  enabled: boolean
+  status: 'stopped' | 'running' | 'error'
+  pid?: number
+  startedAt?: string
+  lastEventAt?: string
+  fireCount: number
+  droppedCount: number
+  queued: number
+  readyLine?: string
+  lastError?: string
+}
+
 /** Short deterministic hash so one schedule node can host several cron times. */
 function hashCron(s: string): string {
   let h = 0
@@ -23,6 +40,7 @@ function hashCron(s: string): string {
 const KIND_LABELS: Record<WorkflowNodeData['kind'], string> = {
   trigger: 'Trigger',
   schedule: 'Schedule',
+  listen: 'Listen',
   agent: 'Sub-agent',
   if: 'If',
   switch: 'Switch',
@@ -40,6 +58,40 @@ export function Inspector() {
   const removeNode = useCanvasStore((s) => s.removeNode)
   const [codeExpanded, setCodeExpanded] = useState(false)
   const [agentModels, setAgentModels] = useState<AgentModel[]>([])
+  const workflowId = useCanvasStore((s) => s.workflowId)
+  const [listener, setListener] = useState<ListenerInfo | null>(null)
+  const [listenerBusy, setListenerBusy] = useState(false)
+  const [listenerError, setListenerError] = useState('')
+
+  // Poll this node's listener state while it is selected (status, counters).
+  useEffect(() => {
+    if (node?.data.kind !== 'listen' || workflowId === null) {
+      setListener(null)
+      return
+    }
+    let cancelled = false
+    const load = async (): Promise<void> => {
+      try {
+        const res = await fetch('/dsh-node-flow/listeners', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ workflowId }),
+        })
+        const data = (await res.json().catch(() => ({}))) as { listeners?: ListenerInfo[] }
+        if (cancelled) return
+        setListener((data.listeners ?? []).find((entry) => entry.nodeId === node.id) ?? null)
+      } catch {
+        /* polling is best-effort */
+      }
+    }
+    void load()
+    const timer = setInterval(() => void load(), 3000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [node?.id, node?.data.kind, workflowId])
+
 
   // Load the available model routes once (for the agent-node model dropdown).
   useEffect(() => {
@@ -97,6 +149,33 @@ export function Inspector() {
       if (!res.ok) alert(data.error ?? '保存计划失败')
     } catch (err) {
       alert(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  /**
+   * Start the resident listener for this node. The host reads the script from
+   * the SAVED workflow file, so an unsaved canvas cannot be started.
+   */
+  const startListenerNow = async (): Promise<void> => {
+    if (workflowId === null) {
+      setListenerError('请先保存工作流，再开启监听')
+      return
+    }
+    setListenerBusy(true)
+    setListenerError('')
+    try {
+      const res = await fetch('/dsh-node-flow/listener/start', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ workflowId, nodeId: node.id }),
+      })
+      const data = (await res.json().catch(() => ({}))) as { listener?: ListenerInfo; error?: string }
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
+      setListener(data.listener ?? null)
+    } catch (err) {
+      setListenerError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setListenerBusy(false)
     }
   }
 
@@ -337,10 +416,86 @@ export function Inspector() {
         </>
       )}
 
+      {d.kind === 'listen' && (
+        <>
+          <div className="wf-listener">
+            <span
+              className={`wf-listener__dot wf-listener__dot--${
+                listener === null ? 'stopped' : listener.status
+              }`}
+              aria-hidden="true"
+            />
+            <span className="wf-listener__state">
+              {listener === null
+                ? '未启动'
+                : listener.status === 'running'
+                  ? `运行中${listener.pid === undefined ? '' : ` (pid ${listener.pid})`}`
+                  : listener.status === 'error'
+                    ? `异常退出${listener.lastError ? `：${listener.lastError}` : ''}`
+                    : '已停止'}
+            </span>
+            <button
+              type="button"
+              className="wf-btn wf-btn--primary"
+              disabled={listenerBusy || (listener !== null && listener.status === 'running')}
+              onClick={() => void startListenerNow()}
+              title={
+                listener !== null && listener.status === 'running'
+                  ? '停止或重启请到「定时任务 → 监听」看板'
+                  : '启动常驻监听进程'
+              }
+            >
+              {listenerBusy ? '启动中…' : '开启监听'}
+            </button>
+          </div>
+          {workflowId === null && (
+            <div className="wf-field-hint">先保存工作流，才能开启监听（脚本存在工作流文件里）</div>
+          )}
+          {listener !== null && (
+            <div className="wf-field-hint">
+              已触发 {listener.fireCount} 次 · 排队 {listener.queued} · 丢弃 {listener.droppedCount}
+              {listener.readyLine ? ` · ${listener.readyLine}` : ''}
+            </div>
+          )}
+          {listenerError !== '' && <div className="wf-field-hint wf-field-hint--error">{listenerError}</div>}
+          <label className="wf-field">
+            <span>最小触发间隔（毫秒）</span>
+            <input
+              placeholder="500"
+              value={d.minIntervalMs ?? ''}
+              onChange={(e) => updateNodeData(node.id, { minIntervalMs: e.target.value })}
+            />
+          </label>
+          <div className="wf-codecard">
+            <div className="wf-codecard__head">
+              <span className="wf-codecard__title">监听脚本</span>
+              <span className="wf-codecard__lang">Python</span>
+            </div>
+            <div className="wf-codecard__editor">
+              <CodeEditor
+                value={d.code ?? ''}
+                onChange={(v) => updateNodeData(node.id, { code: v, lastRun: undefined })}
+                language="python"
+              />
+              <button
+                type="button"
+                className="wf-ed-expand"
+                onClick={() => setCodeExpanded(true)}
+                title="全屏编辑"
+                aria-label="全屏编辑代码"
+              >
+                <img className="wf-icon-image" src={expandArrowsIcon} alt="" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+          <div className="wf-field-hint">stdout 每行触发一次；`[ready] ...` 只显示为监听目标；stderr 作日志。</div>
+        </>
+      )}
+
       {d.kind === 'code' && (
         <>
           <label className="wf-field">
-            <span>运行超时（秒，留空=不限制）</span>
+            <span>运行超时（秒，留空=最长 10 分钟）</span>
             <input
               placeholder="例如 30"
               value={d.timeout ?? ''}
@@ -357,20 +512,13 @@ export function Inspector() {
           <div className="wf-codecard">
             <div className="wf-codecard__head">
             <span className="wf-codecard__title">Code</span>
-            <select
-              className="wf-codecard__lang"
-              value={d.language ?? 'typescript'}
-              onChange={(e) => updateNodeData(node.id, { language: e.target.value, lastRun: undefined })}
-            >
-              <option value="typescript">TypeScript</option>
-              <option value="python">Python</option>
-            </select>
+            <span className="wf-codecard__lang">Python</span>
           </div>
           <div className="wf-codecard__editor">
             <CodeEditor
               value={d.code ?? ''}
               onChange={(v) => updateNodeData(node.id, { code: v, lastRun: undefined })}
-              language={d.language ?? 'typescript'}
+              language="python"
             />
             <button
               type="button"
@@ -390,9 +538,37 @@ export function Inspector() {
         <CodeEditorModal
           value={d.code ?? ''}
           onChange={(v) => updateNodeData(node.id, { code: v, lastRun: undefined })}
-          language={d.language ?? 'typescript'}
+          language="python"
           onClose={() => setCodeExpanded(false)}
         />
+      )}
+
+      {d.kind !== 'note' && (
+        <>
+          <label className="wf-field">
+            <span>失败重试次数（0~5）</span>
+            <input
+              type="number"
+              min={0}
+              max={5}
+              placeholder="0"
+              value={d.retries ?? ''}
+              onChange={(e) => updateNodeData(node.id, { retries: e.target.value })}
+            />
+          </label>
+          <label className="wf-field">
+            <span>重试间隔（毫秒，0~10000）</span>
+            <input
+              type="number"
+              min={0}
+              max={10000}
+              placeholder="0"
+              value={d.retryDelayMs ?? ''}
+              onChange={(e) => updateNodeData(node.id, { retryDelayMs: e.target.value })}
+            />
+          </label>
+          <div className="wf-field-hint">节点失败后立刻用同一个输入重跑；发送类节点建议保持 0，避免重复发送。</div>
+        </>
       )}
 
       {d.lastRun && (

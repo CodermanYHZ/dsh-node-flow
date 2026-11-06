@@ -1,16 +1,18 @@
 /**
  * DSH web client half for dsh-node-flow.
  *
- * Runs inside the sandboxed `dsh-cordis-client-runner` closure. The guarded
- * client `ctx` only exposes client-side facades (slots / theme / host / harness),
- * so this half is fully self-contained: it renders the React Flow canvas from
- * its own Zustand store and stays mountable without waiting on any service.
+ * Runs inside the sandboxed `dsh-cordis-client-runner` closure, so it only
+ * touches the client services the guarded `ctx` exposes. Presentation follows
+ * the host's own contract:
  *
- * Presentation: the canvas is NOT an always-on floating window. Instead this
- * half injects a single "节点模式" entry row into the DSH sidebar (plain DOM +
- * self-healing, the same pattern the task-board plugin uses), and only when the
- * user toggles it does a full-screen overlay host the canvas. Closing the
- * overlay returns to the normal GUI.
+ * - the canvas is registered into the `main` slot under this package's panel
+ *   id, so it fills the central column as a page;
+ * - a `sidebar.panellist` row with the same id is the entry: the sidebar owns
+ *   the button, its placement, its collapsed-rail behavior, and its label.
+ *
+ * Nothing is written to `document.body` and no shell class name is guessed —
+ * the earlier version injected its own sidebar row and read the shell's
+ * `sidebarCol` / `logoRow` / `newSession` classes, which no longer exist.
  *
  * `react` / `react-dom` are externalized (resolved by the host ModuleLoader,
  * like the official dsh-client-* bundles); everything else is inlined.
@@ -19,22 +21,58 @@
  */
 
 import React from 'react'
-import ReactDOM from 'react-dom/client'
-import { Overlay } from './components/Overlay.js'
+import { Panel } from './components/Panel.js'
+import { getColorScheme, reportTheme, setColorScheme } from './hostTheme.js'
 import rfCss from '@xyflow/react/dist/style.css'
 import canvasCss from './components/canvas.css'
 
-export const name = 'dsh-node-flow-ui'
-export const inject = [] as const
+export const name = 'dsh-node-flow'
 
-/** Idempotency attribute / selector for the injected sidebar entry row. */
-const ENTRY_ATTR = 'data-dsh-node-flow-entry'
-const ENTRY_SELECTOR = `[${ENTRY_ATTR}]`
-const ENTRY_LABEL_ATTR = 'data-dsh-node-flow-entry-label'
+/**
+ * Client cordis services this half needs. `slots` is what makes the panel and
+ * the sidebar row registrable; `theme` carries the shell's light/dark scheme so
+ * the canvas can follow it; `layout` is reached through a nested inject so a
+ * host without it still shows the canvas.
+ */
+export const inject = ['slots', 'theme'] as const
 
-let overlayRoot: ReactDOM.Root | null = null
-let overlayEl: HTMLElement | null = null
-let entry: HTMLButtonElement | null = null
+/** The `main` key and the `sidebar.panellist` id this package registers. */
+const PANEL_ID = 'dsh-node-flow'
+
+/**
+ * Below the shipped rows (plugins 0, scheduled tasks 10) and the third-party
+ * rows already present (dsh-context 20).
+ */
+const PANEL_ORDER = 30
+
+/** Shown on the sidebar row and used as the panel's accessible name. */
+const ENTRY_LABEL = '节点模式'
+
+interface LayoutServiceLike {
+  selectPanel(panelId: string | null): void
+}
+
+/** The slice of the shell's theme service this half reads. */
+interface ThemeServiceLike {
+  getTheme(): { active: { colorScheme: 'light' | 'dark' } }
+}
+
+interface ClientContextLike {
+  inject?(services: string[], callback: (scoped: { layout: LayoutServiceLike }) => void): void
+  effect?(callback: () => unknown, label?: string): void
+  on?(event: string, callback: () => void): () => void
+  theme?: ThemeServiceLike
+  slots: {
+    inject(slot: string, register: () => unknown): () => void
+    register(options: Record<string, unknown>, render: (props: Record<string, unknown>) => unknown): unknown
+  }
+}
+
+/** Owner props the sidebar supplies to a global panel icon. */
+interface PanelIconProps {
+  size?: number
+  active?: boolean
+}
 
 function ensureStyles(): void {
   if (document.getElementById('dsh-node-flow-styles')) return
@@ -44,206 +82,104 @@ function ensureStyles(): void {
   document.head.appendChild(style)
 }
 
-function syncEntryActive(): void {
-  if (!entry) return
-  if (overlayEl) {
-    entry.dataset.active = 'true'
-    entry.style.background = 'rgba(59, 130, 246, 0.16)'
-  } else {
-    delete entry.dataset.active
-    entry.style.background = 'transparent'
-  }
-}
-
-function openOverlay(): void {
-  if (overlayEl) return
-  overlayEl = document.createElement('div')
-  overlayEl.id = 'dsh-node-flow-overlay'
-  document.body.appendChild(overlayEl)
-  overlayRoot = ReactDOM.createRoot(overlayEl)
-  overlayRoot.render(React.createElement(Overlay, { onClose: closeOverlay }))
-  syncEntryActive()
-}
-
-function closeOverlay(): void {
-  if (overlayRoot) {
-    overlayRoot.unmount()
-    overlayRoot = null
-  }
-  if (overlayEl) {
-    overlayEl.remove()
-    overlayEl = null
-  }
-  syncEntryActive()
-}
-
-function toggleOverlay(): void {
-  if (overlayEl) closeOverlay()
-  else openOverlay()
-}
-
-/** Match the current sidebar rail state across legacy and current DSH shells. */
-function sidebarIsCollapsed(root: HTMLElement): boolean {
-  return root.matches('[class*="collapsed"], [data-sidebar-collapsed="true"]')
-    || root.closest('[data-sidebar-collapsed="true"]') !== null
-    || root.getBoundingClientRect().width <= 80
-}
-
-/** Keep the injected row aligned with the wide sidebar or collapsed icon rail. */
-function syncEntryLayout(root: HTMLElement): void {
-  if (!entry) return
-  const collapsed = sidebarIsCollapsed(root)
-  entry.dataset.sidebarCollapsed = collapsed ? 'true' : 'false'
-  entry.style.alignSelf = collapsed ? 'flex-start' : 'stretch'
-  entry.style.justifyContent = collapsed ? 'center' : 'flex-start'
-  entry.style.width = collapsed ? '36px' : '100%'
-  entry.style.height = collapsed ? '36px' : 'auto'
-  entry.style.padding = collapsed ? '0' : '8px 12px'
-  entry.style.margin = collapsed ? '0 0 12px' : '0'
-  entry.style.gap = collapsed ? '0' : '8px'
-  const label = entry.querySelector<HTMLElement>(`[${ENTRY_LABEL_ATTR}]`)
-  if (label) label.hidden = collapsed
-}
-
-/** Build the sidebar entry row (a plain button; no React tree in the shell). */
-function createEntry(): HTMLButtonElement {
-  const btn = document.createElement('button')
-  btn.type = 'button'
-  btn.setAttribute(ENTRY_ATTR, '')
-  btn.setAttribute('aria-label', '节点模式')
-  btn.title = '打开工作流画布（节点模式）'
-  btn.style.cssText = [
-    'display:flex',
-    'align-items:center',
-    'gap:8px',
-    'width:100%',
-    'padding:8px 12px',
-    'background:transparent',
-    'border:none',
-    'border-radius:8px',
-    'color:inherit',
-    'font-size:13px',
-    'cursor:pointer',
-    'text-align:left',
-    'transition:background 0.15s',
-  ].join(';')
-  btn.innerHTML =
-    '<span aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;font-size:14px;line-height:1;">⬡</span>' +
-    `<span ${ENTRY_LABEL_ATTR}>节点模式</span>`
-  btn.addEventListener('mouseenter', () => {
-    if (btn.dataset.active !== 'true') {
-      btn.style.background = 'var(--dsw-alias-interactive-bg-hover, rgba(148,163,184,0.12))'
-    }
-  })
-  btn.addEventListener('mouseleave', () => {
-    if (btn.dataset.active !== 'true') btn.style.background = 'transparent'
-  })
-  btn.addEventListener('click', toggleOverlay)
-  return btn
-}
-
-/** The sidebar shell root, or undefined while not yet mounted. */
-function sidebarRoot(): HTMLElement | undefined {
-  const column = document.querySelector<HTMLElement>('[data-pane="sidebar"], [class*="sidebarCol"]')
-  if (!column) return undefined
-  const logoOwner = column.querySelector<HTMLElement>('[class*="logoRow"]')?.parentElement
-  return logoOwner ?? (column.firstElementChild as HTMLElement | undefined)
-}
-
-/** The New Session button; a direct child on legacy shells, nested otherwise. */
-function newSessionButton(root: HTMLElement): HTMLButtonElement | undefined {
-  const nested = root.querySelector<HTMLButtonElement>('button[class*="newSession"]')
-  if (nested) return nested
-  for (const child of root.children) {
-    if (child.tagName === 'BUTTON') return child as HTMLButtonElement
-  }
-  return undefined
-}
-
-/** Insert the entry just below the New Session row (before the workspace browser). */
-function placeEntry(root: HTMLElement): boolean {
-  if (!entry) return false
-  const button = newSessionButton(root)
-  if (!button) return false
-  if (entry.parentElement !== root) {
-    const row = button.closest('[class*="logoRow"]')
-    const base = row !== null && row.parentElement === root ? row : button
-    root.insertBefore(entry, base.nextElementSibling)
-  }
-  return true
-}
-
 /**
- * Mount the sidebar entry, waiting for the shell to render and self-healing
- * when a React re-render displaces the row. Returns a disposer.
+ * The sidebar glyph: three connected nodes, emphasizing the selected panel.
+ * `currentColor` lets the shell's own active/inactive rail color win.
  */
-function mountEntry(): () => void {
-  if (document.querySelector(ENTRY_SELECTOR)) return () => {}
-  entry = createEntry()
-  let root: HTMLElement | undefined
-  let placed = false
-  let observedRoot: HTMLElement | undefined
-
-  const resizeObserver = new ResizeObserver(() => {
-    if (root) syncEntryLayout(root)
-  })
-  const stateObserver = new MutationObserver(() => {
-    if (root) syncEntryLayout(root)
-  })
-
-  const observeRoot = (next: HTMLElement): void => {
-    if (observedRoot === next) return
-    resizeObserver.disconnect()
-    stateObserver.disconnect()
-    observedRoot = next
-    resizeObserver.observe(next)
-    stateObserver.observe(next, {
-      attributes: true,
-      attributeFilter: ['class', 'data-sidebar-collapsed'],
-    })
-  }
-
-  const tryPlace = (): void => {
-    if (root !== undefined && !root.isConnected) {
-      resizeObserver.disconnect()
-      stateObserver.disconnect()
-      observedRoot = undefined
-      root = undefined
-      placed = false
-    }
-    if (placed) {
-      if (document.body.contains(entry!)) return
-      root = undefined
-      placed = false
-    }
-    root ??= sidebarRoot()
-    if (root === undefined) return
-    observeRoot(root)
-    placed = placeEntry(root)
-    if (placed) syncEntryLayout(root)
-  }
-
-  const waitObserver = new MutationObserver(() => {
-    tryPlace()
-  })
-  waitObserver.observe(document.body, { childList: true, subtree: true })
-
-  tryPlace()
-
-  return () => {
-    waitObserver.disconnect()
-    resizeObserver.disconnect()
-    stateObserver.disconnect()
-    entry?.remove()
-    entry = null
-  }
+function WorkflowIcon({ size = 16, active = false }: PanelIconProps) {
+  return React.createElement(
+    'svg',
+    {
+      viewBox: '0 0 24 24',
+      width: size,
+      height: size,
+      fill: 'none',
+      stroke: 'currentColor',
+      strokeWidth: active ? 1.7 : 1.5,
+      strokeLinecap: 'round',
+      strokeLinejoin: 'round',
+      'aria-hidden': true,
+      focusable: false,
+      style: { display: 'block' },
+    },
+    React.createElement('path', { d: 'M6.5 7.5h4.2M13.3 7.5h4.2M6.5 16.5h4.2M13.3 16.5h4.2' }),
+    React.createElement('rect', { x: 2.6, y: 5.1, width: 3.9, height: 4.8, rx: 1.3 }),
+    React.createElement('rect', { x: 17.5, y: 5.1, width: 3.9, height: 4.8, rx: 1.3 }),
+    React.createElement('rect', { x: 2.6, y: 14.1, width: 3.9, height: 4.8, rx: 1.3 }),
+    React.createElement('rect', { x: 17.5, y: 14.1, width: 3.9, height: 4.8, rx: 1.3 }),
+    React.createElement('circle', { cx: 12, cy: 12, r: 2.3 }),
+  )
 }
 
-export function apply(): () => void {
+export function apply(ctx: ClientContextLike): void {
   ensureStyles()
-  const disposeEntry = mountEntry()
-  return () => {
-    closeOverlay()
-    disposeEntry()
+
+  // `layout` owns panel selection; without it the canvas still renders and the
+  // close button is simply absent.
+  let layout: LayoutServiceLike | undefined
+  ctx.inject?.(['layout'], (scoped) => {
+    layout = scoped.layout
+  })
+
+  // Follow the shell's scheme. Colours come from the host's alias tokens, but
+  // the handful of `[data-theme="light"]` widget rules need the scheme mirrored
+  // onto our own element, and a theme switch has to reach the mounted panel.
+  const theme = ctx.theme
+  if (theme !== undefined) {
+    setColorScheme(theme.getTheme().active.colorScheme)
+    const sync = (): void => {
+      setColorScheme(theme.getTheme().active.colorScheme)
+    }
+    if (typeof ctx.on === 'function') {
+      if (typeof ctx.effect === 'function') ctx.effect(() => ctx.on?.('theme/change', sync), 'dsh-node-flow: theme')
+      else ctx.on('theme/change', sync)
+    }
+  }
+
+  const exitPanel = (): void => {
+    layout?.selectPanel('conversation')
+  }
+
+  ctx.slots.inject('main', () =>
+    ctx.slots.register(
+      { name: 'main', key: PANEL_ID, label: () => ENTRY_LABEL },
+      () => React.createElement(Panel, { onExit: exitPanel }),
+    ),
+  )
+
+  ctx.slots.inject('sidebar.panellist', () =>
+    ctx.slots.register(
+      { name: 'sidebar.panellist', id: PANEL_ID, order: PANEL_ORDER, label: () => ENTRY_LABEL },
+      (owner?: Record<string, unknown>) =>
+        React.createElement(WorkflowIcon, {
+          size: typeof owner?.size === 'number' ? owner.size : 16,
+          active: owner?.active === true,
+        }),
+    ),
+  )
+
+  // One-shot reachability probe: a POST carries this page's Origin, so the host
+  // records the shell's real Origin/Host pair. The palette report needs a
+  // mounted panel (the alias tokens live inside the layout subtree), so it is
+  // sent from Panel instead — see `reportTheme`.
+  void fetch('/dsh-node-flow/health', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ scheme: getColorScheme(), phase: 'client-ready' }),
+    cache: 'no-store',
+  })
+    .then(async (res) => {
+      const body = (await res.json().catch(() => ({}))) as { origin?: unknown; host?: unknown; error?: unknown }
+      if (res.ok) console.info('[dsh-node-flow] host routes reachable', body.origin, body.host)
+      else console.warn('[dsh-node-flow] host route check failed:', res.status, body.error ?? '')
+    })
+    .catch((err: unknown) => {
+      console.warn('[dsh-node-flow] host route check failed:', err)
+    })
+
+  // A canvas that is never opened still reports its palette on every theme
+  // change, so the report cannot go stale after the first mount.
+  if (typeof ctx.on === 'function' && typeof ctx.effect === 'function') {
+    ctx.effect(() => ctx.on?.('theme/change', () => reportTheme()), 'dsh-node-flow: theme report')
   }
 }

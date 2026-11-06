@@ -10,11 +10,13 @@
  * @module components/Toolbar
  */
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useCanvasStore } from '../store/canvas.js'
 import type { WorkflowDocument, WorkflowNodeData } from '../model.js'
 import { ScheduleBoard } from './ScheduleBoard.js'
 import { HelpDoc } from './HelpDoc.js'
+import { WorkspacePicker } from './WorkspacePicker.js'
+import type { WorkspaceOption } from './WorkspacePicker.js'
 
 
 /** JSON response of the host run routes. */
@@ -25,9 +27,25 @@ type RunResponse = {
   logs?: string[]
   output?: string
   failure?: { kind?: string; message?: string }
+  sessionId?: string
+  workspaceTitle?: string
+  createdSession?: boolean
+  usedFallbackWorkspace?: boolean
 }
 
+/** One Workspace row plus the state of its node-mode runner session. */
+type WorkspaceRow = WorkspaceOption
+
 const now = (): string => new Date().toLocaleTimeString()
+
+/** Per-attempt history for a node that had to be retried. */
+type AttemptInfo = { attempt: number; status: 'ok' | 'error'; ms: number; error?: string }
+
+/** Parse a per-node retry setting: missing/invalid/<=0 means "no retries". */
+const retryCount = (raw: string | undefined, max: number): number => {
+  const value = parseInt(raw ?? '', 10)
+  return Number.isFinite(value) && value > 0 ? Math.min(max, value) : 0
+}
 
 /** Substitute `{{key}}` placeholders in an output template. */
 function renderTemplate(template: string, vars: Record<string, unknown>): string {
@@ -66,18 +84,121 @@ export function Toolbar({ onExitNodeMode }: { onExitNodeMode?: () => void }) {
   const updateNodeData = useCanvasStore((s) => s.updateNodeData)
   const workflowName = useCanvasStore((s) => s.workflowName)
   const setWorkflowName = useCanvasStore((s) => s.setWorkflowName)
-  const theme = useCanvasStore((s) => s.theme)
-  const toggleTheme = useCanvasStore((s) => s.toggleTheme)
+  const executionWorkspaceId = useCanvasStore((s) => s.executionWorkspaceId)
+  const setExecutionWorkspace = useCanvasStore((s) => s.setExecutionWorkspace)
+  const viewingRun = useCanvasStore((s) => s.viewingRun)
   const nameRef = useRef<HTMLInputElement>(null)
   const [showBoard, setShowBoard] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [savedAt, setSavedAt] = useState('')
+  const [workspaces, setWorkspaces] = useState<WorkspaceRow[]>([])
+  const [workspaceError, setWorkspaceError] = useState('')
+
+  // Workspaces are where Agent nodes execute: each one has (or will get) its
+  // own node-mode runner session, so the child inherits that Workspace's
+  // directory and sandbox boundary. Pick one explicitly; a fresh canvas falls
+  // back to the last Workspace used, then the first registered one.
+  useEffect(() => {
+    let cancelled = false
+    const load = async (): Promise<void> => {
+      try {
+        const res = await fetch('/dsh-node-flow/workspaces', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: '{}',
+        })
+        const data = (await res.json().catch(() => ({}))) as {
+          workspaces?: WorkspaceRow[]
+          lastWorkspaceId?: string | null
+          error?: string
+        }
+        if (cancelled) return
+        if (!res.ok) {
+          setWorkspaceError(data.error ?? `HTTP ${res.status}`)
+          return
+        }
+        const list = Array.isArray(data.workspaces) ? data.workspaces : []
+        setWorkspaces(list)
+        setWorkspaceError('')
+        const store = useCanvasStore.getState()
+        if (store.executionWorkspaceId === null && list.length > 0) {
+          const preferred = list.find((w) => w.id === data.lastWorkspaceId) ?? list[0]
+          store.setExecutionWorkspace(preferred.id, preferred.title)
+        }
+      } catch (err) {
+        if (!cancelled) setWorkspaceError(err instanceof Error ? err.message : String(err))
+      }
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  /**
+   * Hand one manual run to the host so it is stored exactly like a scheduled run.
+   *
+   * The canvas keeps only each node's latest `lastRun` (live feedback), so without
+   * this a manual run leaves no trace and "view that run" could never show it.
+   */
+  const reportRun = async (startedAt: number): Promise<void> => {
+    const current = useCanvasStore.getState()
+    const executed = current.nodes.filter((node) => node.data.lastRun !== undefined)
+    if (executed.length === 0) return
+    const nodes = current.nodes.map((node) => {
+      const outcome = node.data.lastRun
+      const base = { id: node.id, kind: node.data.kind, label: node.data.label }
+      if (outcome === undefined) return { ...base, status: 'skipped', ms: 0 }
+      return {
+        ...base,
+        status: outcome.error === undefined ? 'ok' : 'error',
+        ms: outcome.duration ?? 0,
+        ...(outcome.value === undefined ? {} : { output: outcome.value }),
+        ...(outcome.error === undefined ? {} : { error: outcome.error }),
+        ...(outcome.logs.length > 0 ? { logs: outcome.logs } : {}),
+        ...(outcome.attempts === undefined ? {} : { attempts: outcome.attempts }),
+      }
+    })
+    const outputNode = [...current.nodes]
+      .reverse()
+      .find((node) => node.data.kind === 'output' && node.data.lastRun !== undefined)
+    const output = outputNode?.data.lastRun?.value ?? executed.at(-1)?.data.lastRun?.value
+    try {
+      await fetch('/dsh-node-flow/record-run', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          workflowName: current.workflowName,
+          doc: current.exportDocument(),
+          startedAt: new Date(startedAt).toISOString(),
+          durationMs: Date.now() - startedAt,
+          nodes,
+          ...(output === undefined ? {} : { output }),
+        }),
+      })
+    } catch {
+      /* history is best-effort; a failed report must not fail the run */
+    }
+  }
 
   const onRun = async () => {
     const store = useCanvasStore.getState()
     const nodes = store.nodes
     const edges = store.edges
+    const startedAt = Date.now()
     if (nodes.length === 0) {
       alert('工作流为空')
+      return
+    }
+    // Agent nodes need a Workspace: that is what decides which runner session
+    // (directory + sandbox boundary) the child belongs to. Never guess silently.
+    if (nodes.some((n) => n.data.kind === 'agent') && store.executionWorkspaceId === null) {
+      alert(
+        workspaces.length === 0
+          ? '没有可用的工作区。请先在侧边栏添加一个工作区，再运行 Agent 节点。'
+          : '请先在顶栏选择「执行工作区」，再运行 Agent 节点。',
+      )
       return
     }
     const byId = new Map(nodes.map((n) => [n.id, n]))
@@ -88,7 +209,7 @@ export function Toolbar({ onExitNodeMode }: { onExitNodeMode?: () => void }) {
     for (const n of nodes) updateNodeData(n.id, { lastRun: undefined })
 
     let startIds = nodes
-      .filter((n) => n.data.kind === 'trigger' || n.data.kind === 'schedule')
+      .filter((n) => n.data.kind === 'trigger' || n.data.kind === 'schedule' || n.data.kind === 'listen')
       .map((n) => n.id)
     if (startIds.length === 0) startIds = nodes.map((n) => n.id)
 
@@ -143,32 +264,59 @@ export function Toolbar({ onExitNodeMode }: { onExitNodeMode?: () => void }) {
       }
 
       try {
-        if (d.kind === 'trigger' || d.kind === 'schedule') {
+        if (d.kind === 'trigger' || d.kind === 'schedule' || d.kind === 'listen') {
           const value = d.text ?? ''
           setVal({ value })
           return await fanOut(value)
         } else if (d.kind === 'code') {
           setVal({ running: true })
           const onError = d.onError === 'continue' ? 'continue' : 'stop'
+          const retries = retryCount(d.retries, 5)
+          const delayMs = retryCount(d.retryDelayMs, 10_000)
+          const attempts: AttemptInfo[] = []
           let nodeError: string | undefined
           let val = ''
-          try {
-            const res = await fetch('/dsh-node-flow/run', {
-              method: 'POST',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ program: d.code ?? '', language: d.language ?? 'typescript', input, timeout: parseInt(d.timeout ?? '', 10) || 0 }),
-            })
-            const data = await parseResponse(res)
-            if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
-            const value = data.value
-            const logs = data.logs ?? []
-            nodeError = data.failure?.message ?? data.error
-            updateNodeData(id, { lastRun: { input, logs, value, error: nodeError, at: now(), duration: dur() } })
-            val = value !== undefined ? (typeof value === 'object' ? JSON.stringify(value) : String(value)) : logs.join('\n')
-          } catch (err) {
-            nodeError = err instanceof Error ? err.message : String(err)
-            fail(err)
+          let logs: string[] = []
+          for (let attempt = 1; attempt <= retries + 1; attempt++) {
+            const started = performance.now()
+            const ms = (): number => Math.round(performance.now() - started)
+            try {
+              const res = await fetch('/dsh-node-flow/run', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ program: d.code ?? '', language: 'python', input, timeout: parseInt(d.timeout ?? '', 10) || 0 }),
+              })
+              const data = await parseResponse(res)
+              if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
+              const failure = data.failure?.message ?? data.error
+              if (failure) throw new Error(failure)
+              const value = data.value
+              logs = data.logs ?? []
+              val = value !== undefined ? (typeof value === 'object' ? JSON.stringify(value) : String(value)) : logs.join('\n')
+              nodeError = undefined
+              if (attempts.length > 0) attempts.push({ attempt, status: 'ok', ms: ms() })
+              break
+            } catch (err) {
+              nodeError = err instanceof Error ? err.message : String(err)
+              attempts.push({ attempt, status: 'error', ms: ms(), error: nodeError })
+              if (attempt <= retries) {
+                if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs))
+                continue
+              }
+              fail(err)
+            }
           }
+          updateNodeData(id, {
+            lastRun: {
+              input,
+              logs,
+              value: nodeError === undefined ? val : undefined,
+              error: nodeError,
+              at: now(),
+              duration: dur(),
+              ...(attempts.length > 0 ? { attempts } : {}),
+            },
+          })
           if (nodeError) {
             if (onError === 'continue') return await fanOut('')
             return input
@@ -183,23 +331,59 @@ export function Toolbar({ onExitNodeMode }: { onExitNodeMode?: () => void }) {
           const agentOptions = sep > 0 ? { provider: modelRoute.slice(0, sep), model: modelRoute.slice(sep + 1) } : undefined
           setVal({ running: true })
           const onError = d.onError === 'continue' ? 'continue' : 'stop'
+          const retries = retryCount(d.retries, 5)
+          const delayMs = retryCount(d.retryDelayMs, 10_000)
+          const attempts: AttemptInfo[] = []
           let nodeError: string | undefined
           let out = ''
-          try {
-            const res = await fetch('/dsh-node-flow/run-agent', {
-              method: 'POST',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ prompt, timeout: parseInt(d.timeout ?? '', 10) || 0, agentOptions }),
-            })
-            const data = await parseResponse(res)
-            if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
-            out = data.output ?? ''
-            nodeError = data.error
-            updateNodeData(id, { lastRun: { input: received, logs: [], value: out, error: nodeError, at: now(), duration: dur() } })
-          } catch (err) {
-            nodeError = err instanceof Error ? err.message : String(err)
-            fail(err)
+          let runLogs: string[] = []
+          for (let attempt = 1; attempt <= retries + 1; attempt++) {
+            const started = performance.now()
+            const ms = (): number => Math.round(performance.now() - started)
+            try {
+              const res = await fetch('/dsh-node-flow/run-agent', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({
+                  prompt,
+                  timeout: parseInt(d.timeout ?? '', 10) || 0,
+                  agentOptions,
+                  // The Workspace decides the runner session (and therefore this
+                  // child's directory and sandbox boundary).
+                  workspaceId: useCanvasStore.getState().executionWorkspaceId ?? undefined,
+                }),
+              })
+              const data = await parseResponse(res)
+              if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
+              if (data.error) throw new Error(String(data.error))
+              out = data.output ?? ''
+              runLogs = data.createdSession
+                ? [`为「${data.workspaceTitle ?? '工作区'}」创建了运行会话 ${data.sessionId ?? ''}`.trim()]
+                : []
+              nodeError = undefined
+              if (attempts.length > 0) attempts.push({ attempt, status: 'ok', ms: ms() })
+              break
+            } catch (err) {
+              nodeError = err instanceof Error ? err.message : String(err)
+              attempts.push({ attempt, status: 'error', ms: ms(), error: nodeError })
+              if (attempt <= retries) {
+                if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs))
+                continue
+              }
+              fail(err)
+            }
           }
+          updateNodeData(id, {
+            lastRun: {
+              input: received,
+              logs: runLogs,
+              value: nodeError === undefined ? out : undefined,
+              error: nodeError,
+              at: now(),
+              duration: dur(),
+              ...(attempts.length > 0 ? { attempts } : {}),
+            },
+          })
           if (nodeError) {
             if (onError === 'continue') return await fanOut('')
             return received
@@ -296,6 +480,37 @@ export function Toolbar({ onExitNodeMode }: { onExitNodeMode?: () => void }) {
       await executeNode(sid, '', visited)
     }
     if (!ran) alert('工作流没有可执行的节点。')
+    await reportRun(startedAt)
+  }
+
+  /**
+   * Save the canvas into `workflows/<workflowId>.json`. The first save of an
+   * unsaved canvas lets the host mint the id and remembers it afterwards, so
+   * later saves overwrite the same file.
+   */
+  const onSave = async (): Promise<void> => {
+    const store = useCanvasStore.getState()
+    setSaving(true)
+    try {
+      const res = await fetch('/dsh-node-flow/workflow', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: store.workflowId ?? undefined, doc: store.exportDocument() }),
+      })
+      const data = (await res.json().catch(() => ({}))) as { id?: string; name?: string; error?: string }
+      if (!res.ok || typeof data.id !== 'string') throw new Error(data.error ?? `HTTP ${res.status}`)
+      store.setWorkflowId(data.id)
+      // The host de-duplicates names (`X` → `X (2)`); follow whatever it stored
+      // so the toolbar title and the library row cannot disagree.
+      if (typeof data.name === 'string' && data.name !== '') store.setWorkflowName(data.name)
+      // Reload the library list when it is open: a fresh save must show up now.
+      store.bumpWorkflows()
+      setSavedAt(new Date().toLocaleTimeString())
+    } catch (err) {
+      alert('保存失败：' + (err instanceof Error ? err.message : String(err)))
+    } finally {
+      setSaving(false)
+    }
   }
 
   const saveWorkflow = async (): Promise<void> => {
@@ -374,6 +589,13 @@ export function Toolbar({ onExitNodeMode }: { onExitNodeMode?: () => void }) {
             <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
           </svg>
         </button>
+        <span className="wf-toolbar__divider" aria-hidden="true" />
+        <WorkspacePicker
+          options={workspaces}
+          value={executionWorkspaceId}
+          error={workspaceError}
+          onChange={setExecutionWorkspace}
+        />
       </div>
       <div className="wf-toolbar__actions">
         <div className="wf-toolbar__utilities">
@@ -393,14 +615,12 @@ export function Toolbar({ onExitNodeMode }: { onExitNodeMode?: () => void }) {
             </svg>
           </button>
           <button
-            className={`wf-theme-toggle wf-theme-toggle--${theme}`}
-            onClick={toggleTheme}
-            title={theme === 'dark' ? '切换到浅色' : '切换到深色'}
-            aria-label={theme === 'dark' ? '切换到浅色' : '切换到深色'}
+            className="wf-btn"
+            onClick={() => void onSave()}
+            disabled={saving}
+            title={savedAt ? `上次保存 ${savedAt}` : '保存到 workflow-canvas/workflows'}
           >
-            <span className="wf-theme-toggle__sun">☀️</span>
-            <span className="wf-theme-toggle__knob" />
-            <span className="wf-theme-toggle__moon">🌙</span>
+            {saving ? '保存中…' : '保存'}
           </button>
           <label className="wf-btn">
             导入
@@ -417,12 +637,17 @@ export function Toolbar({ onExitNodeMode }: { onExitNodeMode?: () => void }) {
           <button className="wf-btn" onClick={onExport}>
             导出
           </button>
-          <button className="wf-btn" onClick={() => setShowBoard(true)}>
-            定时任务
+          <button className="wf-btn" onClick={() => setShowBoard(true)} title="定时任务 / 监听">
+            定时/监听
           </button>
         </div>
         <div className="wf-toolbar__primary-actions">
-          <button className="wf-btn wf-btn--primary" onClick={onRun}>
+          <button
+            className="wf-btn wf-btn--primary"
+            onClick={onRun}
+            disabled={viewingRun !== null}
+            title={viewingRun !== null ? '正在回放某次运行，先返回编辑再运行' : '运行工作流'}
+          >
             ▶ 运行
           </button>
           {onExitNodeMode && (
