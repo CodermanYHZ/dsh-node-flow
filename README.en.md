@@ -40,8 +40,7 @@ DSH Node Flow is a visual workflow plugin for [DeepSeek Harness (DSH)](https://g
 
 The canvas defines no palette of its own: background, surfaces, text, borders and accent all
 come from the host's `--dsw-alias-*` theme tokens, so it matches the shell in both light and
-dark and follows a theme change (the screenshots below still show the earlier blue palette and
-are kept for layout reference).
+dark and follows a theme change.
 
 ### Node properties
 
