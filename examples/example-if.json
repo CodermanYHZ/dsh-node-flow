@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "name": "If 分流",
+  "description": "生成一个数，大于10 走 true、否则走 false（改 code 里的数字可测另一条分支）",
+  "nodes": [
+    {
+      "id": "b-trig",
+      "type": "workflow",
+      "position": {
+        "x": 20,
+        "y": 240
+      },
+      "data": {
+        "kind": "trigger",
+        "label": "入口",
+        "text": "判断一个数是否大于 10"
+      }
+    },
+    {
+      "id": "b-code",
+      "type": "workflow",
+      "position": {
+        "x": 200,
+        "y": 240
+      },
+      "data": {
+        "kind": "code",
+        "label": "生成一个数",
+        "language": "python",
+        "code": "import json\nprint(json.dumps({'n': 15}))"
+      }
+    },
+    {
+      "id": "b-if",
+      "type": "workflow",
+      "position": {
+        "x": 400,
+        "y": 240
+      },
+      "data": {
+        "kind": "if",
+        "label": "大于10?",
+        "condition": "Number(JSON.parse(result).n) > 10"
+      }
+    },
+    {
+      "id": "b-true",
+      "type": "workflow",
+      "position": {
+        "x": 620,
+        "y": 100
+      },
+      "data": {
+        "kind": "output",
+        "label": "大于10",
+        "template": "这个数 {{result}} 大于 10"
+      }
+    },
+    {
+      "id": "b-false",
+      "type": "workflow",
+      "position": {
+        "x": 620,
+        "y": 360
+      },
+      "data": {
+        "kind": "output",
+        "label": "≤10",
+        "template": "这个数 {{result}} 小于等于 10"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "be1",
+      "source": "b-trig",
+      "target": "b-code"
+    },
+    {
+      "id": "be2",
+      "source": "b-code",
+      "target": "b-if"
+    },
+    {
+      "id": "be3",
+      "source": "b-if",
+      "target": "b-true",
+      "sourceHandle": "true"
+    },
+    {
+      "id": "be4",
+      "source": "b-if",
+      "target": "b-false",
+      "sourceHandle": "false"
+    }
+  ]
+}

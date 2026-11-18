@@ -1,0 +1,169 @@
+{
+  "version": 1,
+  "name": "Loop · 批量处理热点",
+  "description": "遍历热点列表 → 含 AI 的交 agent 深入、否则跳过 → 收集每轮结果",
+  "nodes": [
+    {
+      "id": "lp-trig",
+      "type": "workflow",
+      "position": {
+        "x": 20,
+        "y": 240
+      },
+      "data": {
+        "kind": "trigger",
+        "label": "热点列表",
+        "text": "[\"AI 大模型再突破\",\"芯片供应回暖\",\"开源社区新进展\"]"
+      }
+    },
+    {
+      "id": "lp-loop",
+      "type": "workflow",
+      "position": {
+        "x": 220,
+        "y": 240
+      },
+      "data": {
+        "kind": "loop",
+        "label": "遍历热点",
+        "mode": "items",
+        "itemsExpr": "JSON.parse(result)",
+        "maxIters": "100",
+        "collect": true
+      }
+    },
+    {
+      "id": "lp-code",
+      "type": "workflow",
+      "position": {
+        "x": 440,
+        "y": 240
+      },
+      "data": {
+        "kind": "code",
+        "label": "读取本条",
+        "language": "python",
+        "code": "import os\nprint(os.environ.get('DSH_INPUT', ''))"
+      }
+    },
+    {
+      "id": "lp-if",
+      "type": "workflow",
+      "position": {
+        "x": 660,
+        "y": 240
+      },
+      "data": {
+        "kind": "if",
+        "label": "含AI?",
+        "condition": "result.includes(\"AI\")"
+      }
+    },
+    {
+      "id": "lp-agent",
+      "type": "workflow",
+      "position": {
+        "x": 880,
+        "y": 120
+      },
+      "data": {
+        "kind": "agent",
+        "label": "深入总结",
+        "prompt": "请把这条科技热点用一句话总结清楚，包含核心信息，不要罗列原始 JSON。"
+      }
+    },
+    {
+      "id": "lp-out-agent",
+      "type": "workflow",
+      "position": {
+        "x": 1100,
+        "y": 120
+      },
+      "data": {
+        "kind": "output",
+        "label": "AI 条目",
+        "template": "AI → {{result}}"
+      }
+    },
+    {
+      "id": "lp-out-skip",
+      "type": "workflow",
+      "position": {
+        "x": 880,
+        "y": 380
+      },
+      "data": {
+        "kind": "output",
+        "label": "跳过",
+        "template": "跳过(非AI) → {{result}}"
+      }
+    },
+    {
+      "id": "lp-out-done",
+      "type": "workflow",
+      "position": {
+        "x": 220,
+        "y": 480
+      },
+      "data": {
+        "kind": "output",
+        "label": "全部结果",
+        "template": "{{result}}"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "lpe1",
+      "source": "lp-trig",
+      "target": "lp-loop",
+      "targetHandle": "in"
+    },
+    {
+      "id": "lpe2",
+      "source": "lp-loop",
+      "target": "lp-code",
+      "sourceHandle": "iterate"
+    },
+    {
+      "id": "lpe3",
+      "source": "lp-code",
+      "target": "lp-if"
+    },
+    {
+      "id": "lpe4",
+      "source": "lp-if",
+      "target": "lp-agent",
+      "sourceHandle": "true"
+    },
+    {
+      "id": "lpe5",
+      "source": "lp-if",
+      "target": "lp-out-skip",
+      "sourceHandle": "false"
+    },
+    {
+      "id": "lpe6",
+      "source": "lp-agent",
+      "target": "lp-out-agent"
+    },
+    {
+      "id": "lpe7",
+      "source": "lp-out-agent",
+      "target": "lp-loop",
+      "targetHandle": "back"
+    },
+    {
+      "id": "lpe8",
+      "source": "lp-out-skip",
+      "target": "lp-loop",
+      "targetHandle": "back"
+    },
+    {
+      "id": "lpe9",
+      "source": "lp-loop",
+      "target": "lp-out-done",
+      "sourceHandle": "done"
+    }
+  ]
+}

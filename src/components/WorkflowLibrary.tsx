@@ -1,10 +1,14 @@
 /**
- * Workflow library drawer — the list of saved workflows.
+ * Workflow library drawer — saved workflows plus the shipped templates.
  *
- * Every row is one file under `$DSH_HOME/workflow-canvas/workflows/<id>.json`.
- * Clicking a row (or dropping it on the canvas) loads that file into the canvas;
- * the toolbar's 保存 writes the canvas back to the same id. Each row's ⋯ menu
- * renames or deletes that file.
+ * Every saved row is one file under `$DSH_HOME/workflow-canvas/workflows/<id>.json`.
+ * Clicking a row (or dropping it on the canvas) loads it; the toolbar's 保存
+ * writes the canvas back to the same id. Each saved row's ⋯ menu renames or
+ * deletes that file.
+ *
+ * Template rows come from the package's `examples/` directory and are read-only:
+ * they show a 内置 badge, have no ⋯ menu, and load as an *unsaved* canvas so
+ * 保存 creates a new workflow instead of overwriting the shipped file.
  *
  * @module components/WorkflowLibrary
  */
@@ -13,24 +17,36 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useCanvasStore } from '../store/canvas.js'
 import type { WorkflowDocument } from '../model.js'
 
-/** One row of `GET /dsh-node-flow/workflows`. */
+/** One row of `POST /dsh-node-flow/workflows`. */
 interface WorkflowSummary {
   id: string
   name: string
   description?: string
   updatedAt?: string
   nodeCount: number
+  /** `template` rows ship with the package and are read-only. */
+  source?: 'user' | 'template'
 }
 
 /** MIME type used when dragging a workflow row onto the canvas. */
 export const WORKFLOW_DRAG_TYPE = 'application/x-dsh-workflow'
 
-/** Load one workflow file into the canvas. */
+/**
+ * Load one workflow into the canvas.
+ *
+ * A template opens as an *unsaved* canvas (`workflowId = null`): Save then mints
+ * a new file, so the shipped `examples/` copy can never be overwritten and a
+ * plugin upgrade stays free to replace it.
+ */
 export async function loadWorkflowFile(id: string): Promise<void> {
   const res = await fetch(`/dsh-node-flow/workflow?id=${encodeURIComponent(id)}`)
-  const data = (await res.json().catch(() => ({}))) as { doc?: WorkflowDocument; error?: string }
+  const data = (await res.json().catch(() => ({}))) as {
+    doc?: WorkflowDocument
+    error?: string
+    source?: 'user' | 'template'
+  }
   if (!res.ok || data.doc === undefined) throw new Error(data.error ?? `HTTP ${res.status}`)
-  useCanvasStore.getState().importDocument(data.doc, id)
+  useCanvasStore.getState().importDocument(data.doc, data.source === 'template' ? null : id)
 }
 
 /** Where the ⋯ menu is anchored, in viewport coordinates. */
@@ -184,34 +200,38 @@ export function WorkflowLibrary() {
             ) : (
               <span className="wf-palette__label">{row.name}</span>
             )}
-            <span className="wf-wfitem__meta">{row.nodeCount}</span>
-            <button
-              type="button"
-              className="wf-wfitem__menu"
-              draggable={false}
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation()
-                // Absolute inside the panel: a `fixed` popover would be trapped
-                // by the panel's backdrop-filter containing block + overflow.
-                const rect = e.currentTarget.getBoundingClientRect()
-                const root = rootRef.current?.getBoundingClientRect()
-                setMenu({
-                  id: row.id,
-                  name: row.name,
-                  x: rect.right - (root?.left ?? 0),
-                  y: rect.bottom - (root?.top ?? 0) + 4,
-                })
-              }}
-              aria-label="更多操作"
-              title="更多操作"
-            >
-              ⋯
-            </button>
+            <span className="wf-wfitem__meta">{row.source === 'template' ? '内置' : row.nodeCount}</span>
+            {row.source !== 'template' && (
+              <button
+                type="button"
+                className="wf-wfitem__menu"
+                draggable={false}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  // Absolute inside the panel: a `fixed` popover would be trapped
+                  // by the panel's backdrop-filter containing block + overflow.
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  const root = rootRef.current?.getBoundingClientRect()
+                  setMenu({
+                    id: row.id,
+                    name: row.name,
+                    x: rect.right - (root?.left ?? 0),
+                    y: rect.bottom - (root?.top ?? 0) + 4,
+                  })
+                }}
+                aria-label="更多操作"
+                title="更多操作"
+              >
+                ⋯
+              </button>
+            )}
           </div>
         ))}
       </div>
-      <div className="wf-palette__hint">{notice !== '' ? notice : '点击加载到画布，或拖到右侧'}</div>
+      <div className="wf-palette__hint">
+        {notice !== '' ? notice : '点击加载到画布（内置示例会另存为新工作流），或拖到右侧'}
+      </div>
       {menu !== null && (
         <div
           className="wf-wfitem__pop"

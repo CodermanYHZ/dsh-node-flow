@@ -27,6 +27,7 @@
     "lib",
     "dist",
     "cordis.patch.yml",
+    "examples",
     "locale",
     "icon.svg",
     "README.md"

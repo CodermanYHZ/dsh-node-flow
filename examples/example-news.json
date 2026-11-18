@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "name": "定时 · 新闻摘要",
+  "description": "每天 08:30 python 拉取 AIHOT 热点 → agent 总结 → 输出",
+  "nodes": [
+    {
+      "id": "n-trig",
+      "type": "workflow",
+      "position": {
+        "x": 20,
+        "y": 220
+      },
+      "data": {
+        "kind": "schedule",
+        "label": "每日定时",
+        "cron": "30 8 * * *",
+        "text": "抓取今天 AI 热点并总结"
+      }
+    },
+    {
+      "id": "n-fetch",
+      "type": "workflow",
+      "position": {
+        "x": 230,
+        "y": 220
+      },
+      "data": {
+        "kind": "code",
+        "label": "拉取新闻",
+        "language": "python",
+        "code": "import json, urllib.request\nreq = urllib.request.Request('https://aihot.news/api/v1/items?mode=selected&window=7d&limit=10', headers={'User-Agent': 'aihot-api/2.0.0'})\ntry:\n  with urllib.request.urlopen(req, timeout=20) as r:\n    data = json.load(r)\n  items = data.get('items') or data.get('data') or []\n  lines = []\n  for it in items[:8]:\n    t = it.get('title', '')\n    s = it.get('summary', '')\n    src = (it.get('source') or {}).get('name', '')\n    link = (it.get('links') or {}).get('aihot', '')\n    lines.append(f\"[{src}] {t}\\n   {s}\\n   {link}\")\n  print('\\n'.join(lines) or 'no data')\nexcept Exception as e:\n  print('news fetch failed: ' + str(e))"
+      }
+    },
+    {
+      "id": "n-agent",
+      "type": "workflow",
+      "position": {
+        "x": 470,
+        "y": 220
+      },
+      "data": {
+        "kind": "agent",
+        "label": "总结新闻",
+        "prompt": "请把下面的 AI 热点整理成一段简洁的中文简报，按重要度排序，每条只保留标题和一句摘要，不要罗列原始 JSON。"
+      }
+    },
+    {
+      "id": "n-out",
+      "type": "workflow",
+      "position": {
+        "x": 730,
+        "y": 220
+      },
+      "data": {
+        "kind": "output",
+        "label": "输出",
+        "template": "{{result}}"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "ne1",
+      "source": "n-trig",
+      "target": "n-fetch"
+    },
+    {
+      "id": "ne2",
+      "source": "n-fetch",
+      "target": "n-agent"
+    },
+    {
+      "id": "ne3",
+      "source": "n-agent",
+      "target": "n-out"
+    }
+  ]
+}

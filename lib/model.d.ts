@@ -133,30 +133,3 @@ export declare function createNode(kind: WorkflowNodeType, label: string, positi
  * derived from edges.
  */
 export declare function toStepList(doc: WorkflowDocument): unknown[];
-/**
- * A ready-made "fetch weather → agent organizes → output" workflow document,
- * loaded by the toolbar's "加载天气示例" button.
- */
-export declare function buildWeatherExample(): WorkflowDocument;
-export declare function buildNewsExample(): WorkflowDocument;
-/** 通用条件分流：code 生成一个数 → If >10 → true/false 两个输出。 */
-export declare function buildBasicIfExample(): WorkflowDocument;
-/** AI 问答·判断：agent 回答后，If 判断回答是否提到 "AI" 走不同分支。 */
-export declare function buildQaIfExample(): WorkflowDocument;
-/** 日常 Switch：按当前时段（早上/下午/晚上）路由到不同问候。 */
-export declare function buildDailySwitchExample(): WorkflowDocument;
-/** Loop 示例：遍历一批热点，按是否含 "AI" 分流到 agent 深入或直接跳过，并收集每轮结果。 */
-export declare function buildLoopExample(): WorkflowDocument;
-/** While 示例：用字符串状态（待处理→处理中→完成）做判断，直到状态变为"完成"才停。 */
-export declare function buildWhileExample(): WorkflowDocument;
-/**
- * Built-in templates. The host writes each one into
- * `$DSH_HOME/workflow-canvas/workflows/<id>.json` the first time the plugin
- * activates (an existing directory is never re-seeded), so the library and the
- * "添加节点" drawer read the same files.
- */
-export declare const BUILTIN_EXAMPLES: Array<{
-    id: string;
-    name: string;
-    build: () => WorkflowDocument;
-}>;

@@ -89,10 +89,12 @@ dsh plugin --profile <profile> add git+https://github.com/CodermanYHZ/dsh-node-f
 
 ### 基本使用
 
-1. 点击 **添加节点**，从左侧面板选择节点或内置示例。
+1. 点击 **添加节点**，从左侧面板选择节点；**📂 工作流** 里可以打开已保存的工作流，以及随插件发布的内置示例。
 2. 拖动节点端口建立连接，并在右侧属性面板填写参数。
 3. 点击顶部 **▶ 运行**，观察节点状态与实际执行路径。
 4. 使用 **导出** 将工作流保存为文件，或通过 **定时任务** 创建 Cron 调度。
+
+内置示例存放在仓库的 `examples/` 目录（随包发布），在工作流库里标记为「内置」并只读：打开后点 **保存** 会另存成一份新工作流，不会写回插件包内的文件。
 
 ### 执行工作区与运行会话
 
@@ -191,8 +193,9 @@ React、ReactDOM 和 `@deepseek-ai/cordis` 由 DSH 作为 Peer Dependencies 提�
 npm install
 npm run dev       # 启动独立 Vite 预览
 npm run build     # TypeScript 检查 + 客户端打包 + Demo 构建
-npm test          # 运行测试
 ```
+
+内置示例是 `examples/*.json`（工作流文档），改完直接生效，不需要重新生成代码；新增示例只需加一个 JSON 文件。
 
 ## 许可证
 

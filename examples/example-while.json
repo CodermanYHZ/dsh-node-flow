@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "name": "While · 状态轮询",
+  "description": "用字符串状态(待处理→处理中→完成)判断，直到状态变为\"完成\"才停，收集每次推进",
+  "nodes": [
+    {
+      "id": "wh-trig",
+      "type": "workflow",
+      "position": {
+        "x": 20,
+        "y": 240
+      },
+      "data": {
+        "kind": "trigger",
+        "label": "初始状态",
+        "text": "待处理"
+      }
+    },
+    {
+      "id": "wh-while",
+      "type": "workflow",
+      "position": {
+        "x": 220,
+        "y": 240
+      },
+      "data": {
+        "kind": "while",
+        "label": "直到完成",
+        "condition": "result !== \"完成\"",
+        "maxIters": "100",
+        "collect": true
+      }
+    },
+    {
+      "id": "wh-code",
+      "type": "workflow",
+      "position": {
+        "x": 440,
+        "y": 240
+      },
+      "data": {
+        "kind": "code",
+        "label": "状态机",
+        "language": "python",
+        "code": "import os\ns = os.environ.get('DSH_INPUT', '').strip()\nif s == '待处理':\n    print('处理中')\nelif s == '处理中':\n    print('完成')\nelse:\n    print(s)"
+      }
+    },
+    {
+      "id": "wh-if",
+      "type": "workflow",
+      "position": {
+        "x": 660,
+        "y": 240
+      },
+      "data": {
+        "kind": "if",
+        "label": "是否处理中?",
+        "condition": "result === \"处理中\""
+      }
+    },
+    {
+      "id": "wh-out",
+      "type": "workflow",
+      "position": {
+        "x": 220,
+        "y": 480
+      },
+      "data": {
+        "kind": "output",
+        "label": "状态推进",
+        "template": "状态推进: {{result}}"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "whe1",
+      "source": "wh-trig",
+      "target": "wh-while",
+      "targetHandle": "in"
+    },
+    {
+      "id": "whe2",
+      "source": "wh-while",
+      "target": "wh-code",
+      "sourceHandle": "iterate"
+    },
+    {
+      "id": "whe3",
+      "source": "wh-code",
+      "target": "wh-if"
+    },
+    {
+      "id": "whe4",
+      "source": "wh-if",
+      "target": "wh-while",
+      "sourceHandle": "true",
+      "targetHandle": "back"
+    },
+    {
+      "id": "whe5",
+      "source": "wh-if",
+      "target": "wh-while",
+      "sourceHandle": "false",
+      "targetHandle": "back"
+    },
+    {
+      "id": "whe6",
+      "source": "wh-while",
+      "target": "wh-out",
+      "sourceHandle": "done"
+    }
+  ]
+}

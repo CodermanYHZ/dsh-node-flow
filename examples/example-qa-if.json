@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "name": "AI 问答·判断",
+  "description": "agent 回答后，if 判断是否提到 \"AI\" 并走不同分支",
+  "nodes": [
+    {
+      "id": "q-trig",
+      "type": "workflow",
+      "position": {
+        "x": 20,
+        "y": 240
+      },
+      "data": {
+        "kind": "trigger",
+        "label": "问题",
+        "text": "请回答：最近 AI 有什么热点？"
+      }
+    },
+    {
+      "id": "q-agent",
+      "type": "workflow",
+      "position": {
+        "x": 220,
+        "y": 240
+      },
+      "data": {
+        "kind": "agent",
+        "label": "AI 回答",
+        "prompt": "用一句话回答用户的问题。"
+      }
+    },
+    {
+      "id": "q-if",
+      "type": "workflow",
+      "position": {
+        "x": 470,
+        "y": 240
+      },
+      "data": {
+        "kind": "if",
+        "label": "提到AI?",
+        "condition": "result.includes(\"AI\")"
+      }
+    },
+    {
+      "id": "q-yes",
+      "type": "workflow",
+      "position": {
+        "x": 700,
+        "y": 100
+      },
+      "data": {
+        "kind": "output",
+        "label": "提到AI",
+        "template": "回答提到 AI：{{result}}"
+      }
+    },
+    {
+      "id": "q-no",
+      "type": "workflow",
+      "position": {
+        "x": 700,
+        "y": 360
+      },
+      "data": {
+        "kind": "output",
+        "label": "没提AI",
+        "template": "回答没提 AI：{{result}}"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "qe1",
+      "source": "q-trig",
+      "target": "q-agent"
+    },
+    {
+      "id": "qe2",
+      "source": "q-agent",
+      "target": "q-if"
+    },
+    {
+      "id": "qe3",
+      "source": "q-if",
+      "target": "q-yes",
+      "sourceHandle": "true"
+    },
+    {
+      "id": "qe4",
+      "source": "q-if",
+      "target": "q-no",
+      "sourceHandle": "false"
+    }
+  ]
+}

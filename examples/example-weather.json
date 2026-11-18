@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "name": "天气示例",
+  "description": "拉取上海实时天气 → agent 整理 → 输出",
+  "nodes": [
+    {
+      "id": "w-trigger",
+      "type": "workflow",
+      "position": {
+        "x": 40,
+        "y": 200
+      },
+      "data": {
+        "kind": "trigger",
+        "label": "天气触发",
+        "text": "抓取上海实时天气，并整理成一句中文播报"
+      }
+    },
+    {
+      "id": "w-fetch",
+      "type": "workflow",
+      "position": {
+        "x": 230,
+        "y": 200
+      },
+      "data": {
+        "kind": "code",
+        "label": "拉取天气",
+        "language": "python",
+        "code": "import json, urllib.request\nurl = 'https://api.open-meteo.com/v1/forecast?latitude=31.23&longitude=121.47&current=temperature_2m,weather_code&timezone=Asia%2FShanghai'\nwith urllib.request.urlopen(url, timeout=20) as r:\n    data = json.load(r)\ncur = data.get('current') or {}\nprint(json.dumps({'temp': cur.get('temperature_2m'), 'code': cur.get('weather_code')}, ensure_ascii=False))"
+      }
+    },
+    {
+      "id": "w-agent",
+      "type": "workflow",
+      "position": {
+        "x": 440,
+        "y": 200
+      },
+      "data": {
+        "kind": "agent",
+        "label": "整理天气",
+        "prompt": "请把下面这段实时天气数据整理成一句简洁、自然的中文天气播报，包含温度和天气状况（天气代码含义：0=晴，1-2=多云，3=阴，45/48=雾，51-67=雨，71-77=雪，80-82=阵雨，95+=雷雨），不要罗列原始 JSON。"
+      }
+    },
+    {
+      "id": "w-output",
+      "type": "workflow",
+      "position": {
+        "x": 720,
+        "y": 200
+      },
+      "data": {
+        "kind": "output",
+        "label": "输出",
+        "template": "{{result}}"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "we1",
+      "source": "w-trigger",
+      "target": "w-fetch"
+    },
+    {
+      "id": "we2",
+      "source": "w-fetch",
+      "target": "w-agent"
+    },
+    {
+      "id": "we3",
+      "source": "w-agent",
+      "target": "w-output"
+    }
+  ]
+}

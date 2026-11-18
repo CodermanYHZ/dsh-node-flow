@@ -96,10 +96,12 @@ unavailable runtime.
 
 ### Basic usage
 
-1. Click **Add Node**, then choose a node or a built-in example from the left panel.
+1. Click **Add Node** to pick a node kind; **📂 Workflows** opens your saved workflows and the built-in examples shipped with the plugin.
 2. Connect node handles and configure parameters in the right-hand inspector.
 3. Click **▶ Run** and watch the node states and highlighted execution path.
 4. Use **Export** to save the workflow as a file, or create a cron schedule from **Scheduled Tasks**.
+
+Built-in examples live in the repository's `examples/` directory and ship with the package. They are marked “内置” in the library and are read-only: opening one and pressing **Save** writes a new workflow instead of modifying the file inside the package.
 
 ### Execution Workspace and runner session
 
@@ -216,8 +218,9 @@ React, ReactDOM, and `@deepseek-ai/cordis` are provided by DSH as peer dependenc
 npm install
 npm run dev       # Start the standalone Vite preview
 npm run build     # TypeScript checks + client bundle + demo build
-npm test          # Run tests
 ```
+
+Built-in examples are plain workflow documents in `examples/*.json`: edit one and the change is live, no code regeneration needed. Adding an example means adding a JSON file.
 
 ## License
 

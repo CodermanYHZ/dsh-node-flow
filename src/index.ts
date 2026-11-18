@@ -29,8 +29,8 @@ import type { ChildProcess } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { BUILTIN_EXAMPLES } from './model.js'
 import type { WorkflowDocument, WorkflowEdge, WorkflowNode, WorkflowNodeData } from './model.js'
+import { isExampleId, listExamples, readExample } from './examples.js'
 export const name = 'dsh-node-flow'
 export const inject = ['webServer'] as const
 
@@ -39,7 +39,7 @@ export const inject = ['webServer'] as const
  * so a stale module generation (a host that has not reloaded the plugin yet)
  * is visible in the report instead of being guessed at.
  */
-const BUILD_REVISION = '2026-11-02.1'
+const BUILD_REVISION = '2026-11-18.2'
 
 /**
  * Wall-clock ceiling for one Python code node. The per-node `timeout` (seconds)
@@ -744,14 +744,23 @@ function newWorkflowId(): string {
   return `wf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
 }
 
+/** Which side of the library a row came from: a saved file or a shipped template. */
+type WorkflowSource = 'user' | 'template'
+
 interface WorkflowSummary {
   id: string
   name: string
   description?: string
   updatedAt?: string
   nodeCount: number
+  source: WorkflowSource
 }
 
+/**
+ * Rows for the workflow library: the user's saved files first (newest first),
+ * then the templates shipped in `examples/`. A saved file whose id matches a
+ * template shadows it — the user has a copy under that name.
+ */
 function listWorkflows(): WorkflowSummary[] {
   const dir = workflowsDir()
   const out: WorkflowSummary[] = []
@@ -767,12 +776,21 @@ function listWorkflows(): WorkflowSummary[] {
         ...(typeof doc.description === 'string' ? { description: doc.description } : {}),
         ...(typeof doc.updatedAt === 'string' ? { updatedAt: doc.updatedAt } : {}),
         nodeCount: Array.isArray(doc.nodes) ? doc.nodes.length : 0,
+        source: 'user',
       })
     } catch {
       /* a malformed file is skipped, not fatal */
     }
   }
-  return out.sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
+  const saved = new Set(out.map((row) => row.id))
+  for (const example of listExamples()) {
+    if (saved.has(example.id)) continue
+    out.push({ ...example, source: 'template' })
+  }
+  return out.sort((a, b) => {
+    if (a.source !== b.source) return a.source === 'template' ? 1 : -1
+    return (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '') || a.name.localeCompare(b.name)
+  })
 }
 
 function readWorkflow(id: string): (WorkflowDocument & { id: string }) | undefined {
@@ -817,19 +835,6 @@ function writeWorkflow(id: string, doc: WorkflowDocument): string {
   writeFileSync(tmp, JSON.stringify(payload, null, 2), 'utf8')
   renameSync(tmp, path)
   return updatedAt
-}
-
-/** First run: materialise the built-in templates as ordinary workflow files. */
-function seedExampleWorkflows(): void {
-  const dir = workflowsDir()
-  if (readdirSync(dir).some((entry) => entry.endsWith('.json'))) return
-  for (const example of BUILTIN_EXAMPLES) {
-    try {
-      writeWorkflow(example.id, example.build())
-    } catch {
-      /* one bad template must not block the others */
-    }
-  }
 }
 
 /* ---------------- resident listeners (the code trigger) ---------------- */
@@ -2283,14 +2288,6 @@ export function apply(ctx: Context) {
   // `inject: ['webServer']` guarantees this is present when apply runs.
   const webServer = (ctx as unknown as { webServer: WebServerLike }).webServer
 
-  // First activation materialises the built-in templates into the workflow
-  // directory, so the library has something to show before the first save.
-  try {
-    seedExampleWorkflows()
-  } catch {
-    /* the library still works when seeding fails */
-  }
-
   ctx.effect(() => {
     const disposers: Array<() => void> = []
 
@@ -2348,6 +2345,9 @@ export function apply(ctx: Context) {
           try {
             const body = (await readJsonBody(request, 64 * 1024)) as { id?: unknown; name?: unknown } | undefined
             const id = typeof body?.id === 'string' ? body.id : ''
+            if (readWorkflow(id) === undefined && isExampleId(id)) {
+              return sendJson(response, 400, { error: '内置示例不能改名，请先保存成新的工作流' })
+            }
             const doc = readWorkflow(id)
             if (doc === undefined) return sendJson(response, 404, { error: 'workflow not found' })
             const name = uniqueWorkflowName(body?.name, id)
@@ -2373,6 +2373,9 @@ export function apply(ctx: Context) {
             const id = typeof body?.id === 'string' ? body.id : ''
             const path = workflowPath(id)
             if (path === undefined) return sendJson(response, 400, { error: 'invalid workflow id' })
+            if (!existsSync(path) && isExampleId(id)) {
+              return sendJson(response, 400, { error: '内置示例不能删除' })
+            }
             if (!existsSync(path)) return sendJson(response, 200, { ok: true, deleted: false })
             rmSync(path)
             return sendJson(response, 200, { ok: true, deleted: true })
@@ -2397,7 +2400,6 @@ export function apply(ctx: Context) {
           const rejection = routeRejection(ctx, request)
           if (rejection !== undefined) return rejectUntrusted(response, rejection)
           try {
-            seedExampleWorkflows()
             return sendJson(response, 200, { workflows: listWorkflows(), dir: workflowsDir() })
           } catch (err) {
             return sendJson(response, 500, { error: err instanceof Error ? err.message : String(err) })
@@ -2417,9 +2419,17 @@ export function apply(ctx: Context) {
             if (request.method === 'GET') {
               const url = new URL(request.url ?? '', 'http://127.0.0.1')
               const id = url.searchParams.get('id') ?? ''
-              const doc = readWorkflow(id)
+              const saved = readWorkflow(id)
+              // Templates ship with the package and are served read-only; the
+              // client opens them as an unsaved canvas so Save creates a copy.
+              const doc = saved ?? readExample(id)
               if (doc === undefined) return sendJson(response, 404, { error: 'workflow not found' })
-              return sendJson(response, 200, { ok: true, id, doc })
+              return sendJson(response, 200, {
+                ok: true,
+                id,
+                doc,
+                source: saved === undefined ? 'template' : 'user',
+              })
             }
             if (request.method !== 'POST') {
               response.writeHead(405, { allow: 'GET, POST' })
