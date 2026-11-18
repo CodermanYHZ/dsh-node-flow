@@ -675,6 +675,16 @@ function saveSchedules(list: ScheduleRecord[]): void {
 }
 
 /** What the board needs about one task without shipping its whole document. */
+/**
+ * Scheduled tasks whose current run has not settled yet.
+ *
+ * Both entry points share it: a cron occurrence is skipped while one is running
+ * (see `driveSchedules`), and "run once" from the board is refused with 409, so
+ * one task can never execute concurrently with itself. It also drives the
+ * `running` flag the board uses to grey out the button.
+ */
+const schedulesInFlight = new Set<string>()
+
 function scheduleSummary(record: ScheduleRecord): Record<string, unknown> {
   const active = record.status !== 'ended'
   // The durable anchor is the truth; a record without one only exists mid-
@@ -693,6 +703,7 @@ function scheduleSummary(record: ScheduleRecord): Record<string, unknown> {
     ...(record.lastFired === undefined ? {} : { lastFired: record.lastFired }),
     ...(active && anchor !== null ? { nextFire: anchor } : {}),
     ...(overdue ? { overdue: true } : {}),
+    ...(schedulesInFlight.has(record.id) ? { running: true } : {}),
   }
 }
 function loadRuns(): RunRecord[] {
@@ -2064,9 +2075,6 @@ function armScheduler(ctx: Context): void {
   scheduleTimer.unref?.()
 }
 
-/** Schedules whose current run has not settled yet, so one occurrence cannot stack. */
-const schedulesInFlight = new Set<string>()
-
 /**
  * Deliver every occurrence that is due, then re-arm.
  *
@@ -2877,13 +2885,23 @@ export function apply(ctx: Context) {
               const sched = schedules.find((s) => s.id === id)
               if (!sched) return sendJson(response, 404, { error: 'schedule not found' })
               if (!sched.doc) return sendJson(response, 400, { error: 'schedule has no workflow snapshot' })
+              // One task runs at a time: a cron occurrence or a second click must
+              // not start a parallel run of the same workflow.
+              if (schedulesInFlight.has(sched.id)) {
+                return sendJson(response, 409, { error: '这个任务正在运行，请等本次结束' })
+              }
+              schedulesInFlight.add(sched.id)
               const startedAt = Date.now()
-              const run = await runDocumentGraph(ctx, sched.doc, sched.input)
-              run.scheduleId = sched.id
-              run.name = sched.name
-              const file = runFileFromRecord(run, sched.doc, 'manual', Date.now() - startedAt)
-              persistRun(file)
-              return sendJson(response, 200, { ok: true, runId: file.runId, run })
+              try {
+                const run = await runDocumentGraph(ctx, sched.doc, sched.input)
+                run.scheduleId = sched.id
+                run.name = sched.name
+                const file = runFileFromRecord(run, sched.doc, 'manual', Date.now() - startedAt)
+                persistRun(file)
+                return sendJson(response, 200, { ok: true, runId: file.runId, run })
+              } finally {
+                schedulesInFlight.delete(sched.id)
+              }
             }
             const id = String(body?.id ?? `s-${Date.now().toString(36)}`)
             const cron = String(body?.cron ?? '')

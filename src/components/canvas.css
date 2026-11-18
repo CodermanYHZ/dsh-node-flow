@@ -1953,6 +1953,9 @@
 .wf-task__status--error {
   color: var(--dsw-alias-state-error-primary, #ef4444);
 }
+.wf-task__status--running {
+  color: var(--wf-accent);
+}
 .wf-task__actions {
   display: flex;
   gap: 8px;

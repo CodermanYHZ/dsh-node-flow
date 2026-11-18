@@ -29,6 +29,8 @@ type Schedule = {
   nextFire?: string
   /** Anchor already in the past: the occurrence is owed and fires on the next look. */
   overdue?: boolean
+  /** A run (cron or manual) of this task is still in flight on the host. */
+  running?: boolean
 }
 
 type RunMeta = {
@@ -127,6 +129,8 @@ export function ScheduleBoard({ onClose }: { onClose: () => void }) {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [detail, setDetail] = useState<StoredRun | null>(null)
   const [busy, setBusy] = useState(false)
+  /** Task whose "run once" request is still pending, so its button can say so. */
+  const [runningId, setRunningId] = useState<string | null>(null)
   const [error, setError] = useState('')
 
   const refresh = async (): Promise<void> => {
@@ -231,7 +235,7 @@ export function ScheduleBoard({ onClose }: { onClose: () => void }) {
 
   const visible = schedules
 
-  const taskAction = async (action: 'run' | 'clear' | 'resume' | 'delete', id: string): Promise<void> => {
+  const taskAction = async (action: 'clear' | 'resume' | 'delete', id: string): Promise<void> => {
     setBusy(true)
     setError('')
     try {
@@ -241,6 +245,27 @@ export function ScheduleBoard({ onClose }: { onClose: () => void }) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setBusy(false)
+    }
+  }
+
+  /**
+   * Run one task once.
+   *
+   * The request stays open for the whole workflow run, so the row keeps the task
+   * marked as running (button disabled and labelled) until it settles; the host
+   * also refuses a second start with 409, which covers cron occurrences and a
+   * board opened in another window.
+   */
+  const runTask = async (schedule: Schedule): Promise<void> => {
+    setError('')
+    setRunningId(schedule.id)
+    try {
+      await postJson('/dsh-node-flow/schedule', { action: 'run', id: schedule.id })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setRunningId(null)
+      await refresh()
     }
   }
 
@@ -438,6 +463,7 @@ export function ScheduleBoard({ onClose }: { onClose: () => void }) {
               const ownRuns = runsBySchedule.get(schedule.id) ?? []
               const latest = ownRuns[0]
               const open = expanded === schedule.id
+              const running = runningId === schedule.id || schedule.running === true
               return (
                 <div key={schedule.id} className="wf-task">
                   <div className="wf-task__head" style={{ cursor: 'default' }}>
@@ -455,16 +481,24 @@ export function ScheduleBoard({ onClose }: { onClose: () => void }) {
                       <span className="wf-task__sep"> · </span>
                       上次 {when(latest?.startedAt ?? schedule.lastFired)}
                     </span>
-                    {latest !== undefined && (
+                    {running ? (
+                      <span className="wf-task__status wf-task__status--running">● 运行中…</span>
+                    ) : latest !== undefined ? (
                       <span className={`wf-task__status wf-task__status--${latest.status}`}>
                         {latest.status === 'ok' ? '✓ 成功' : `✕ ${latest.failed} 个节点失败`}
                       </span>
-                    )}
+                    ) : null}
                   </div>
 
                   <div className="wf-task__actions">
-                    <button className="wf-btn" onClick={() => void taskAction('run', schedule.id)} disabled={busy}>
-                      运行一次
+                    <button
+                      className="wf-btn"
+                      onClick={() => void runTask(schedule)}
+                      disabled={busy || running}
+                      title={running ? '正在运行，本次结束前不能再次运行' : '用已保存的快照运行一次'}
+                      aria-busy={running}
+                    >
+                      {running ? '运行中…' : '运行一次'}
                     </button>
                     <button className="wf-btn" onClick={() => setExpanded(open ? null : schedule.id)} aria-expanded={open}>
                       {open ? '收起详情' : '详情'}
@@ -473,7 +507,7 @@ export function ScheduleBoard({ onClose }: { onClose: () => void }) {
                       <button
                         className="wf-btn wf-btn--danger"
                         onClick={() => void taskAction('clear', schedule.id)}
-                        disabled={busy}
+                        disabled={busy || running}
                         title="停止定时，但保留任务和运行记录"
                       >
                         取消定时
@@ -483,14 +517,14 @@ export function ScheduleBoard({ onClose }: { onClose: () => void }) {
                         <button
                           className="wf-btn"
                           onClick={() => void taskAction('resume', schedule.id)}
-                          disabled={busy}
+                          disabled={busy || running}
                         >
                           恢复定时
                         </button>
                         <button
                           className="wf-btn wf-btn--danger"
                           onClick={() => void taskAction('delete', schedule.id)}
-                          disabled={busy}
+                          disabled={busy || running}
                           title="彻底删除任务记录（运行历史仍保留在运行记录里）"
                         >
                           删除
