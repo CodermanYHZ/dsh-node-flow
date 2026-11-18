@@ -132,18 +132,6 @@ Agent 节点不是「随便找个活着的会话」执行。顶栏的 **📁 工
 - 事件串行执行，上一次没跑完不会开下一次；进程退出会让监听变为 error 并停止。
 - 在「定时 / 监听」面板里启动、停止、重启或删除；停止会记住状态，宿主重启后尝试恢复。
 
-## 配套 AI Skill
-
-如果希望让 DSH 中的 AI 更准确地生成可直接导入本插件的 JSON 工作流，可以安装配套的 [`dsh-node-flow-skill`](https://github.com/CodermanYHZ/dsh-node-flow-skill)。
-
-该 Skill 包含当前工作流文档结构、节点字段、连线端口、循环规则与完整示例，能够减少字段遗漏或端口名称错误。安装后，可以直接告诉 AI：
-
-```text
-使用 dsh-node-flow-skill，为我生成一个可导入 dsh-node-flow 的 JSON 工作流：……
-```
-
-Skill 地址：<https://github.com/CodermanYHZ/dsh-node-flow-skill>
-
 ## 节点类型
 
 | 节点 | 用途 |

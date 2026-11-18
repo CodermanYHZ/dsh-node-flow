@@ -160,18 +160,6 @@ runs the whole flow:
 - Start, stop, restart or delete it in the Scheduled / Listen board; stopping remembers the
   intent and the host tries to restore it on the next start.
 
-## Companion AI Skill
-
-Install the companion [`dsh-node-flow-skill`](https://github.com/CodermanYHZ/dsh-node-flow-skill) to help AI agents in DSH generate JSON workflows that can be imported directly into this plugin.
-
-The Skill documents the current workflow schema, node fields, connection handles, loop rules, and complete examples, reducing missing fields and invalid handle names. After installation, prompt the AI with:
-
-```text
-Use dsh-node-flow-skill to generate an importable dsh-node-flow JSON workflow that …
-```
-
-Skill repository: <https://github.com/CodermanYHZ/dsh-node-flow-skill>
-
 ## Node types
 
 | Node | Purpose |
