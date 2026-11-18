@@ -6,7 +6,7 @@
 
 ### A visual, executable node-based workflow canvas for DeepSeek Harness
 
-Compose triggers, sub-agents, code, conditional branches, loops, and scheduled tasks with drag-and-drop nodes, then run the complete workflow directly in DSH.
+Compose triggers, sub-agents, Python code, conditional branches, loops, schedules, and listens with drag-and-drop nodes, then run the complete workflow directly in DSH.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-22c55e.svg)](./LICENSE)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.5-3178c6.svg)
@@ -20,19 +20,21 @@ Compose triggers, sub-agents, code, conditional branches, loops, and scheduled t
 
 ## Overview
 
-DSH Node Flow is a visual workflow plugin for [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness). It combines agent calls, TypeScript / Python code, conditions, and loops into executable flow diagrams, making it easy to build automation tasks and multi-step agent workflows.
+DSH Node Flow is a visual workflow plugin for [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness). It combines agent calls, Python scripts, conditions, loops, and scheduled or listened triggers into executable flow diagrams, making it easy to build automation tasks and multi-step agent workflows.
 
 ## Features
 
 - **Visual orchestration** — drag nodes, connect handles, and inspect data and execution paths directly on the canvas.
 - **Sub-agent calls** — agent nodes can inherit the current model or select a model route configured in DSH.
-- **Code nodes** — run TypeScript or Python with a full-screen code editor.
+- **Code nodes (Python)** — run Python on the host, feed it the upstream value and return stdout, with a full-screen code editor.
 - **Flow control** — built-in If, Switch, Loop, and While nodes cover branching and iteration.
 - **Execution feedback** — nodes display their run state, and the actual path taken is highlighted.
-- **Failure policies** — Code and Agent nodes support timeouts and either stopping the branch or continuing with an empty value.
-- **Scheduled tasks** — save workflows with five-field cron expressions, inspect them in the task board, run them immediately, or cancel them.
+- **Failure policies** — Code and Agent nodes support timeouts, retry count/delay, and either stopping the branch or continuing with an empty value.
+- **Scheduled tasks** — save workflows with five-field cron expressions, inspect them in the task board, run them immediately, end, or resume them.
+- **Listen triggers** — a listen node keeps a Python process resident and fires one run per stdout line, which suits polling files, queues, or endpoints.
+- **Built-in examples** — the workflow library ships example templates; opening one and saving creates your own copy.
 - **Import and export** — save workflows as files for backup, sharing, and reuse.
-- **Built-in documentation** — the help panel explains node fields, connection rules, result semantics, and workflow examples.
+- **Built-in documentation** — the help panel explains the execution model, node fields, connection rules, and complete examples.
 
 ## Screenshots
 
@@ -47,9 +49,9 @@ Select a node to configure its label, model, prompt, timeout, and failure policy
 
 ![Node properties inspector](./docs/images/node-inspector.png)
 
-### Scheduled tasks
+### Scheduled tasks and listens
 
-The scheduled-task board displays cron plans, previous trigger times, and latest run results, with actions to inspect, run once, or cancel a task.
+The scheduled-task board displays cron plans, previous trigger times, and latest run results, plus the logs and events of listener processes, with actions to run once, end, resume, or delete a task.
 
 ![Scheduled task board](./docs/images/scheduled-tasks.png)
 
@@ -57,12 +59,11 @@ The scheduled-task board displays cron plans, previous trigger times, and latest
 
 ### Compatibility
 
-This version targets **DSH 0.2.x** (verified on `0.2.1-rc.2`). The host half uses two
-services that replaced earlier seams:
+This version targets **DSH 0.2.x** (`engines.dsh` in `package.json` requires `>=0.2.0-rc.2`). The host half relies on:
 
 | Capability | Uses | Note |
 | --- | --- | --- |
-| Code nodes (TypeScript) | `ctx.ptcRuntime` | `ctx.codeRuntime` was removed in 0.2.x; programs run as a `function-body` |
+| Code nodes | a host Python subprocess (`python -u -c`) | upstream input arrives in `DSH_INPUT`, stdout is the node result; `python → python3 → py` are probed in order |
 | Agent nodes | `ctx.subagents.startActivation` | `subagents.start()` was removed; the child's result comes back with `delivery: 'caller'` |
 | Model dropdown | `ctx.llm.listProviders()` / `listModels()` | `listProviders()` is synchronous in 0.2.x |
 | Sidebar entry and canvas | the `main` + `sidebar.panellist` slots | no shell DOM or class names are read any more (`sidebarCol` / `logoRow` no longer exist) |
@@ -90,9 +91,10 @@ central column.
 
 On activation the plugin writes a capability snapshot to
 `$DSH_HOME/workflow-canvas/health.json`; `selfTest.ok` records whether a real
-TypeScript execution succeeded. The same report is served by
-`GET /dsh-node-flow/health`. Check it first when a Code node reports an
-unavailable runtime.
+**Python** execution succeeded (`selfTest.python` carries the interpreter version) and
+`revision` is the loaded plugin build. The same report is served by
+`GET /dsh-node-flow/health`. Check it first when a Code node reports a missing Python
+interpreter.
 
 ### Basic usage
 
@@ -125,7 +127,7 @@ selector in the toolbar decides which Workspace a run belongs to:
 Bindings live in `$DSH_HOME/workflow-canvas/settings.json`; the `runner` section of
 `GET /dsh-node-flow/health` reports each Workspace's session id, liveness and visibility.
 
-### Scheduled tasks and run history
+### Scheduled tasks, listens and run history
 
 A scheduled task does not poll "does the current minute match the cron?". It persists the
 **next occurrence** (`nextFireAt`) and a single timer compares that anchor with now:
@@ -136,11 +138,28 @@ A scheduled task does not poll "does the current minute match the cron?". It per
   on the next wake-up (not N times), then the anchor jumps to the next future time.
 - If the previous run of the same task has not settled yet, the new occurrence is skipped and
   logged, so one workflow cannot execute concurrently with itself.
+- Cron is matched in the **host's local time zone**; the document's `timezone` field is stored
+  but not used yet.
 - Every run is stored in `$DSH_HOME/workflow-canvas/runs/<runId>.json` with **its own graph
   snapshot**, each node's status/duration/output/error, and the final output; 30 days and 200
   records are retained, older ones pruned.
-- **Manual runs are stored the same way**, so the Scheduled-tasks panel can show every run of
-  the workflow and replay any of them on the canvas without touching the graph being edited.
+- Runs of scheduled tasks and listeners are listed under their own panel entries, where you can
+  inspect node details or replay them on the canvas without touching the graph being edited.
+- Manual runs are persisted the same way, but they belong to no scheduled task, so they do not
+  appear in the task list — read them from `runs/` instead.
+
+### Listen triggers
+
+A listen node keeps a Python process resident; **one stdout line is one event**, and each event
+runs the whole flow:
+
+- Lines starting with `[ready]` only record state and never fire.
+- Events arriving within `minIntervalMs` (default 500ms) collapse onto the newest one; the queue
+  holds at most 5 entries.
+- Events run strictly one at a time; if the process exits, the listener turns into an error and
+  stops.
+- Start, stop, restart or delete it in the Scheduled / Listen board; stopping remembers the
+  intent and the host tries to restore it on the next start.
 
 ## Companion AI Skill
 
@@ -160,8 +179,9 @@ Skill repository: <https://github.com/CodermanYHZ/dsh-node-flow-skill>
 | --- | --- |
 | **Trigger** | Starts the workflow and passes its content downstream. |
 | **Schedule** | Runs the complete workflow using a five-field cron expression. |
+| **Listen** | Keeps a Python process resident; one stdout line fires one run. |
 | **Agent** | Calls a DSH sub-agent using the inherited model or a selected model route. |
-| **Code** | Runs TypeScript or Python on the host, reads upstream input, and returns a result. |
+| **Code** | Runs Python on the host, reads upstream input (`DSH_INPUT`) and returns stdout. |
 | **If** | Routes the workflow to `true` or `false` based on a truthy condition. |
 | **Switch** | Matches a value against cases and falls back to `default`. |
 | **Loop** | Iterates over an array or repeats N times, optionally collecting each result. |
@@ -169,41 +189,33 @@ Skill repository: <https://github.com/CodermanYHZ/dsh-node-flow-skill>
 | **Output** | Renders the upstream value using a `{{result}}` template. |
 | **Note** | Adds a canvas annotation and is not executed. |
 
-## Code node API
+## Code node (Python)
 
-TypeScript programs can use the global `dsh` object:
-
-```ts
-const response = await dsh.fetch({
-  url: "https://example.com/api",
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: { message: "hello" },
-})
-
-const previous = await dsh.input(null) // Read the upstream node output
-const now = await dsh.now(null)        // { iso, ts, local }
-
-return response.json
-```
-
-Python nodes read upstream input from an environment variable and use standard output as the node result:
+Code nodes run on the host as `python -u -c <code>`. The upstream value arrives in the
+`DSH_INPUT` environment variable (non-string input is JSON-encoded first), and **stdout, with
+surrounding whitespace trimmed, is the node result**:
 
 ```python
-import os
+import json, os
 
-previous = os.environ.get("DSH_INPUT", "")
-print(previous)
+raw = os.environ.get("DSH_INPUT", "")   # output of the upstream node
+print(json.dumps({"length": len(raw)}, ensure_ascii=False))
 ```
 
-> DSH Code Runtime bindings require a lossless JSON argument. Use `dsh.input(null)` and `dsh.now(null)` rather than omitting the argument.
+- A node fails only when the process exits non-zero or times out; the error text comes from
+  stderr (a zero exit ignores stderr entirely).
+- The node's `timeout` (seconds) bounds a run; a 600-second hard cap applies on top.
+- The legacy `language` field is ignored — everything runs as Python.
+
+Node fields, handle names and expression syntax are documented in the in-app **📖 guide**;
+that document is the source of truth.
 
 ## Runtime requirements
 
 The plugin expects the DSH host to provide these services:
 
 - `ctx.webServer` for the same-origin routes between canvas and host
-- `ctx.ptcRuntime` for TypeScript Code nodes (Python runs in a host subprocess)
+- a Python interpreter on the host PATH for Code and Listen nodes (`python → python3 → py`)
 - `ctx.agents` and `ctx.subagents` for Agent nodes (via `startActivation`)
 - `ctx.llm` for the model-route list behind the Agent node's dropdown
 
